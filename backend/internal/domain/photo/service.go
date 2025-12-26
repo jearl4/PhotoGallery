@@ -2,7 +2,6 @@ package photo
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"photographer-gallery/backend/internal/repository"
