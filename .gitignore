@@ -1,0 +1,61 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p8
+*.mobileprovision
+*.cert
+*.p12
+
+# AWS
+.aws/
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+cdk.context.json
+cdk.out/
+
+# Backend (Go)
+backend/vendor/
+backend/*.exe
+backend/*.dll
+backend/*.so
+backend/*.dylib
+backend/*.test
+backend/*.out
+backend/tmp/
+backend/dist/
+backend/.env
+
+# Frontend (Angular)
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/.env
+
+# Infrastructure (CDK)
+infrastructure/node_modules/
+infrastructure/cdk.out/
+infrastructure/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Testing
+coverage/
+*.coverage
+
+# OS
+Thumbs.db
