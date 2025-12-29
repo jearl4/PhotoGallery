@@ -54,6 +54,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 	CognitoUsername string `json:"cognito:username"`
 	Email           string `json:"email"`
+	Name            string `json:"name"`
 	TokenUse        string `json:"token_use"`
 }
 

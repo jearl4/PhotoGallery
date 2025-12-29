@@ -55,7 +55,7 @@ export class ApiService {
     );
   }
 
-  getPhotos(galleryId: string, limit = 50, lastKey?: any): Observable<{ photos: Photo[], lastKey?: any }> {
+  getGalleryPhotos(galleryId: string, limit = 50, lastKey?: any): Observable<{ photos: Photo[], lastKey?: any }> {
     let params = new HttpParams().set('limit', limit.toString());
     if (lastKey) {
       params = params.set('lastKey', JSON.stringify(lastKey));
@@ -70,8 +70,8 @@ export class ApiService {
     return this.http.delete<void>(`${this.baseUrl}/galleries/${galleryId}/photos/${photoId}`);
   }
 
-  getFavorites(galleryId: string): Observable<Photo[]> {
-    return this.http.get<Photo[]>(`${this.baseUrl}/galleries/${galleryId}/favorites`);
+  getGalleryFavorites(galleryId: string): Observable<{ favorites: any[] }> {
+    return this.http.get<{ favorites: any[] }>(`${this.baseUrl}/galleries/${galleryId}/favorites`);
   }
 
   // Client endpoints
@@ -86,7 +86,7 @@ export class ApiService {
     return this.http.get<Gallery>(`${this.baseUrl}/client/galleries/${customUrl}`);
   }
 
-  getClientPhotos(customUrl: string, limit = 50, lastKey?: any): Observable<{ photos: Photo[], lastKey?: any }> {
+  getClientGalleryPhotos(customUrl: string, limit = 50, lastKey?: any): Observable<{ photos: Photo[], lastKey?: any }> {
     let params = new HttpParams().set('limit', limit.toString());
     if (lastKey) {
       params = params.set('lastKey', JSON.stringify(lastKey));
@@ -101,11 +101,11 @@ export class ApiService {
     return this.http.get<{ downloadUrl: string }>(`${this.baseUrl}/client/photos/${photoId}/download-url`);
   }
 
-  toggleFavorite(photoId: string): Observable<{ favorited: boolean }> {
-    return this.http.post<{ favorited: boolean }>(`${this.baseUrl}/client/photos/${photoId}/favorite`, {});
+  toggleFavorite(photoId: string): Observable<{ isFavorited: boolean }> {
+    return this.http.post<{ isFavorited: boolean }>(`${this.baseUrl}/client/photos/${photoId}/favorite`, {});
   }
 
-  getSessionFavorites(): Observable<Photo[]> {
-    return this.http.get<Photo[]>(`${this.baseUrl}/client/session/favorites`);
+  getClientFavorites(): Observable<{ favorites: any[] }> {
+    return this.http.get<{ favorites: any[] }>(`${this.baseUrl}/client/session/favorites`);
   }
 }

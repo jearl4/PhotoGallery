@@ -44,43 +44,13 @@ export class AuthStack extends cdk.Stack {
       removalPolicy: props.stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });
 
-    // Google Identity Provider
-    const googleProvider = new cognito.UserPoolIdentityProviderGoogle(this, 'GoogleProvider', {
-      userPool: this.userPool,
-      clientId: process.env.GOOGLE_CLIENT_ID || 'placeholder-google-client-id',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'placeholder-google-secret',
-      scopes: ['profile', 'email', 'openid'],
-      attributeMapping: {
-        email: cognito.ProviderAttribute.GOOGLE_EMAIL,
-        fullname: cognito.ProviderAttribute.GOOGLE_NAME,
-      },
-    });
+    // Social Identity Providers (Google, Facebook, Apple)
+    // These can be added later through AWS Console or by providing credentials via environment variables:
+    // - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+    // - FACEBOOK_APP_ID, FACEBOOK_APP_SECRET
+    // - APPLE_SERVICES_ID, APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY
 
-    // Facebook Identity Provider
-    const facebookProvider = new cognito.UserPoolIdentityProviderFacebook(this, 'FacebookProvider', {
-      userPool: this.userPool,
-      clientId: process.env.FACEBOOK_APP_ID || 'placeholder-facebook-app-id',
-      clientSecret: process.env.FACEBOOK_APP_SECRET || 'placeholder-facebook-secret',
-      scopes: ['public_profile', 'email'],
-      attributeMapping: {
-        email: cognito.ProviderAttribute.FACEBOOK_EMAIL,
-        fullname: cognito.ProviderAttribute.FACEBOOK_NAME,
-      },
-    });
-
-    // Apple Identity Provider (Sign in with Apple)
-    const appleProvider = new cognito.UserPoolIdentityProviderApple(this, 'AppleProvider', {
-      userPool: this.userPool,
-      clientId: process.env.APPLE_SERVICES_ID || 'placeholder-apple-services-id',
-      teamId: process.env.APPLE_TEAM_ID || 'placeholder-apple-team-id',
-      keyId: process.env.APPLE_KEY_ID || 'placeholder-apple-key-id',
-      privateKey: process.env.APPLE_PRIVATE_KEY || 'placeholder-apple-private-key',
-      scopes: ['name', 'email'],
-      attributeMapping: {
-        email: cognito.ProviderAttribute.APPLE_EMAIL,
-        fullname: cognito.ProviderAttribute.APPLE_NAME,
-      },
-    });
+    // For now, we'll use Cognito's built-in email/password authentication
 
     // App Client
     this.userPoolClient = new cognito.UserPoolClient(this, 'PhotographerUserPoolClient', {
@@ -109,17 +79,9 @@ export class AuthStack extends cdk.Stack {
         ],
       },
       supportedIdentityProviders: [
-        cognito.UserPoolClientIdentityProvider.GOOGLE,
-        cognito.UserPoolClientIdentityProvider.FACEBOOK,
-        cognito.UserPoolClientIdentityProvider.APPLE,
         cognito.UserPoolClientIdentityProvider.COGNITO,
       ],
     });
-
-    // Ensure providers are created before client
-    this.userPoolClient.node.addDependency(googleProvider);
-    this.userPoolClient.node.addDependency(facebookProvider);
-    this.userPoolClient.node.addDependency(appleProvider);
 
     // Hosted UI Domain
     const domain = this.userPool.addDomain('CognitoDomain', {

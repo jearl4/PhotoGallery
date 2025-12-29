@@ -40,7 +40,7 @@ export class StorageStack extends cdk.Stack {
               transitionAfter: cdk.Duration.days(0),
             },
             {
-              storageClass: s3.StorageClass.GLACIER_FLEXIBLE_RETRIEVAL,
+              storageClass: s3.StorageClass.GLACIER,
               transitionAfter: cdk.Duration.days(90),
             },
           ],

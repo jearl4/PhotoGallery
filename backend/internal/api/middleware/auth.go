@@ -50,9 +50,11 @@ func (m *AuthMiddleware) VerifyPhotographerToken(ctx context.Context, req events
 	// Add user info to context
 	ctx = context.WithValue(ctx, "userID", claims.CognitoUsername)
 	ctx = context.WithValue(ctx, "email", claims.Email)
+	ctx = context.WithValue(ctx, "name", claims.Name)
 
 	logger.Info("Photographer authenticated", map[string]interface{}{
 		"userId": claims.CognitoUsername,
+		"email":  claims.Email,
 	})
 
 	return ctx, nil

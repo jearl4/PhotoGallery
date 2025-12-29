@@ -28,6 +28,7 @@ import (
 
 type App struct {
 	// Handlers
+	authHandler    *handlers.AuthHandler
 	galleryHandler *handlers.GalleryHandler
 	photoHandler   *handlers.PhotoHandler
 	clientHandler  *handlers.ClientHandler
@@ -86,6 +87,10 @@ func initializeApp() (*App, error) {
 		dynamoClient,
 		fmt.Sprintf("%s-sessions-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
 	)
+	photographerRepo := dynamodbRepo.NewPhotographerRepository(
+		dynamoClient,
+		fmt.Sprintf("%s-photographers-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
+	)
 
 	// Initialize services
 	storageService := storage.NewService(
@@ -110,6 +115,7 @@ func initializeApp() (*App, error) {
 	authService := cognitoAuth.NewService(cfg.CognitoUserPoolID, cfg.CognitoRegion)
 
 	// Initialize handlers
+	authHandler := handlers.NewAuthHandler(photographerRepo)
 	galleryHandler := handlers.NewGalleryHandler(galleryService)
 	photoHandler := handlers.NewPhotoHandler(photoService)
 	clientHandler := handlers.NewClientHandler(galleryService, photoService, sessionService)
@@ -124,6 +130,7 @@ func initializeApp() (*App, error) {
 	})
 
 	return &App{
+		authHandler:       authHandler,
 		galleryHandler:    galleryHandler,
 		photoHandler:      photoHandler,
 		clientHandler:     clientHandler,
@@ -195,6 +202,11 @@ func (app *App) routePhotographerRequests(ctx context.Context, req events.APIGat
 
 	// Extract path parameters
 	ctx = extractPathParams(authCtx, req)
+
+	// Auth routes
+	if path == "/api/v1/auth/me" && method == "GET" {
+		return invokeHandler(ctx, req, app.authHandler.GetMe)
+	}
 
 	// Gallery routes
 	if path == "/api/v1/galleries" && method == "POST" {

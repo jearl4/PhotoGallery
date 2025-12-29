@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import { DatabaseStack } from '../lib/stacks/database-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { AuthStack } from '../lib/stacks/auth-stack';
+import { ApiStack } from '../lib/stacks/api-stack';
 
 const app = new cdk.App();
 
@@ -30,6 +31,15 @@ const storageStack = new StorageStack(app, `PhotographerGalleryStorage-${stage}`
 const authStack = new AuthStack(app, `PhotographerGalleryAuth-${stage}`, {
   env,
   stage,
+});
+
+// API Stack (depends on all other stacks)
+const apiStack = new ApiStack(app, `PhotographerGalleryApi-${stage}`, {
+  env,
+  stage,
+  databaseStack,
+  storageStack,
+  authStack,
 });
 
 // Add tags to all resources
