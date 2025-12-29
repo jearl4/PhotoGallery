@@ -2,10 +2,17 @@ import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import { Construct } from 'constructs';
+import { DatabaseStack } from './database-stack';
 
 interface StorageStackProps extends cdk.StackProps {
   stage: string;
+  databaseStack: DatabaseStack;
 }
 
 export class StorageStack extends cdk.Stack {
@@ -133,6 +140,95 @@ export class StorageStack extends cdk.Stack {
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // Use only North America and Europe for cost optimization
     });
 
+    // === Image Processing Resources ===
+
+    // Dead Letter Queue for failed processing jobs
+    const deadLetterQueue = new sqs.Queue(this, 'ProcessingDLQ', {
+      queueName: `photographer-gallery-processing-dlq-${props.stage}`,
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    // Main processing queue
+    const processingQueue = new sqs.Queue(this, 'ProcessingQueue', {
+      queueName: `photographer-gallery-processing-${props.stage}`,
+      visibilityTimeout: cdk.Duration.minutes(15),
+      receiveMessageWaitTime: cdk.Duration.seconds(20),
+      deadLetterQueue: {
+        queue: deadLetterQueue,
+        maxReceiveCount: 3,
+      },
+    });
+
+    // Lambda function for processing photos
+    const processorFunction = new lambda.Function(this, 'ProcessorFunction', {
+      runtime: lambda.Runtime.PROVIDED_AL2,
+      handler: 'bootstrap',
+      code: lambda.Code.fromAsset('../backend', {
+        bundling: {
+          image: lambda.Runtime.PROVIDED_AL2.bundlingImage,
+          command: [
+            'bash', '-c', [
+              'yum install -y golang zip',
+              'export GOPATH=/tmp/go',
+              'export GOCACHE=/tmp/go-cache',
+              'cd /asset-input',
+              'GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o /asset-output/bootstrap cmd/processor/main.go',
+            ].join(' && '),
+          ],
+          user: 'root',
+        },
+      }),
+      architecture: lambda.Architecture.ARM_64,
+      timeout: cdk.Duration.minutes(10),
+      memorySize: 2048,
+      environment: {
+        STAGE: props.stage,
+        AWS_REGION_NAME: this.region,
+        DYNAMODB_TABLE_PREFIX: 'photographer-gallery',
+        S3_BUCKET_ORIGINAL: this.originalBucket.bucketName,
+        S3_BUCKET_OPTIMIZED: this.optimizedBucket.bucketName,
+        S3_BUCKET_THUMBNAIL: this.thumbnailBucket.bucketName,
+      },
+      reservedConcurrentExecutions: 10,
+    });
+
+    // Grant permissions
+    props.databaseStack.photosTable.grantReadWriteData(processorFunction);
+    this.originalBucket.grantRead(processorFunction);
+    this.optimizedBucket.grantWrite(processorFunction);
+    this.thumbnailBucket.grantWrite(processorFunction);
+
+    // Connect Lambda to SQS queue
+    processorFunction.addEventSource(
+      new lambdaEventSources.SqsEventSource(processingQueue, {
+        batchSize: 1,
+        reportBatchItemFailures: true,
+      })
+    );
+
+    // Add S3 event notification to trigger processing
+    this.originalBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.SqsDestination(processingQueue),
+      {
+        prefix: 'galleries/',
+        suffix: '/original.',
+      }
+    );
+
+    // CloudWatch Alarms
+    processingQueue.metricApproximateAgeOfOldestMessage().createAlarm(this, 'OldestMessageAlarm', {
+      evaluationPeriods: 1,
+      threshold: 600,
+      alarmDescription: 'Alert if messages are stuck in queue for too long',
+    });
+
+    deadLetterQueue.metricApproximateNumberOfMessagesVisible().createAlarm(this, 'DLQAlarm', {
+      evaluationPeriods: 1,
+      threshold: 1,
+      alarmDescription: 'Alert when messages end up in DLQ (processing failures)',
+    });
+
     // Outputs
     new cdk.CfnOutput(this, 'OriginalBucketName', {
       value: this.originalBucket.bucketName,
@@ -157,6 +253,21 @@ export class StorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CloudFrontDistributionId', {
       value: this.distribution.distributionId,
       exportName: `CloudFrontDistributionId-${props.stage}`,
+    });
+
+    new cdk.CfnOutput(this, 'ProcessingQueueUrl', {
+      value: processingQueue.queueUrl,
+      description: 'Processing queue URL',
+    });
+
+    new cdk.CfnOutput(this, 'ProcessorFunctionArn', {
+      value: processorFunction.functionArn,
+      description: 'Processor Lambda function ARN',
+    });
+
+    new cdk.CfnOutput(this, 'DeadLetterQueueUrl', {
+      value: deadLetterQueue.queueUrl,
+      description: 'Dead letter queue URL',
     });
   }
 }

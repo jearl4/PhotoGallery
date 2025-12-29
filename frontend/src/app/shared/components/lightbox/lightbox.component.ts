@@ -1,6 +1,7 @@
-import { Component, Input, Output, EventEmitter, signal, HostListener, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, HostListener, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Photo } from '../../../core/models/gallery.model';
+import { PhotoUrlService } from '../../../core/services/photo-url.service';
 
 @Component({
   selector: 'app-lightbox',
@@ -322,6 +323,8 @@ import { Photo } from '../../../core/models/gallery.model';
   `]
 })
 export class LightboxComponent implements OnInit, OnDestroy {
+  private photoUrlService = inject(PhotoUrlService);
+
   @Input() photos = signal<Photo[]>([]);
   @Input() initialIndex = signal<number>(0);
   @Input() favorites = signal<Set<string>>(new Set());
@@ -384,7 +387,7 @@ export class LightboxComponent implements OnInit, OnDestroy {
   getImageUrl(): string {
     const photo = this.currentPhoto();
     if (!photo) return '';
-    return photo.optimizedUrl || photo.originalUrl;
+    return this.photoUrlService.getOptimizedUrl(photo);
   }
 
   onOverlayClick(event: Event): void {

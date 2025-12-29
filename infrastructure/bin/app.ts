@@ -21,10 +21,11 @@ const databaseStack = new DatabaseStack(app, `PhotographerGalleryDatabase-${stag
   stage,
 });
 
-// Storage Stack
+// Storage Stack (includes image processing)
 const storageStack = new StorageStack(app, `PhotographerGalleryStorage-${stage}`, {
   env,
   stage,
+  databaseStack,
 });
 
 // Auth Stack
