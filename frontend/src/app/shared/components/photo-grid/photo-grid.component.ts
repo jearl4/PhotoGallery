@@ -1,6 +1,7 @@
-import { Component, Input, Output, EventEmitter, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Photo } from '../../../core/models/gallery.model';
+import { PhotoUrlService } from '../../../core/services/photo-url.service';
 
 export interface PhotoGridConfig {
   showFavoriteButton?: boolean;
@@ -215,6 +216,8 @@ export interface PhotoGridConfig {
   `]
 })
 export class PhotoGridComponent {
+  private photoUrlService = inject(PhotoUrlService);
+
   @Input() photos = signal<Photo[]>([]);
   @Input() favorites = signal<Set<string>>(new Set());
   @Input() config = signal<PhotoGridConfig>({});
@@ -229,7 +232,7 @@ export class PhotoGridComponent {
   }
 
   getThumbnailUrl(photo: Photo): string {
-    return photo.thumbnailUrl || photo.optimizedUrl || photo.originalUrl;
+    return this.photoUrlService.getThumbnailUrl(photo);
   }
 
   onPhotoClick(photo: Photo): void {

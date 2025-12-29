@@ -35,20 +35,22 @@ type Gallery struct {
 
 // Photo represents a photo in a gallery
 type Photo struct {
-	PhotoID       string            `dynamodbav:"photoId" json:"photoId"`
-	GalleryID     string            `dynamodbav:"galleryId" json:"galleryId"`
-	FileName      string            `dynamodbav:"fileName" json:"fileName"`
-	OriginalKey   string            `dynamodbav:"originalKey" json:"originalKey"`
-	OptimizedKey  string            `dynamodbav:"optimizedKey" json:"optimizedKey"`
-	ThumbnailKey  string            `dynamodbav:"thumbnailKey" json:"thumbnailKey"`
-	MimeType      string            `dynamodbav:"mimeType" json:"mimeType"`
-	Size          int64             `dynamodbav:"size" json:"size"`
-	Width         int               `dynamodbav:"width" json:"width"`
-	Height        int               `dynamodbav:"height" json:"height"`
-	UploadedAt    time.Time         `dynamodbav:"uploadedAt" json:"uploadedAt"`
-	FavoriteCount int               `dynamodbav:"favoriteCount" json:"favoriteCount"`
-	DownloadCount int               `dynamodbav:"downloadCount" json:"downloadCount"`
-	Metadata      map[string]string `dynamodbav:"metadata,omitempty" json:"metadata,omitempty"` // EXIF data
+	PhotoID          string            `dynamodbav:"photoId" json:"photoId"`
+	GalleryID        string            `dynamodbav:"galleryId" json:"galleryId"`
+	FileName         string            `dynamodbav:"fileName" json:"fileName"`
+	OriginalKey      string            `dynamodbav:"originalKey" json:"originalKey"`
+	OptimizedKey     string            `dynamodbav:"optimizedKey,omitempty" json:"optimizedKey,omitempty"`
+	ThumbnailKey     string            `dynamodbav:"thumbnailKey,omitempty" json:"thumbnailKey,omitempty"`
+	MimeType         string            `dynamodbav:"mimeType" json:"mimeType"`
+	Size             int64             `dynamodbav:"size" json:"size"`
+	Width            int               `dynamodbav:"width,omitempty" json:"width,omitempty"`
+	Height           int               `dynamodbav:"height,omitempty" json:"height,omitempty"`
+	ProcessingStatus string            `dynamodbav:"processingStatus" json:"processingStatus"` // pending, processing, completed, failed
+	UploadedAt       time.Time         `dynamodbav:"uploadedAt" json:"uploadedAt"`
+	ProcessedAt      *time.Time        `dynamodbav:"processedAt,omitempty" json:"processedAt,omitempty"`
+	FavoriteCount    int               `dynamodbav:"favoriteCount" json:"favoriteCount"`
+	DownloadCount    int               `dynamodbav:"downloadCount" json:"downloadCount"`
+	Metadata         map[string]string `dynamodbav:"metadata,omitempty" json:"metadata,omitempty"` // EXIF data
 }
 
 // Favorite represents a client's favorite photo

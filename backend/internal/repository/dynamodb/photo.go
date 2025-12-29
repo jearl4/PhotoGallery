@@ -25,42 +25,49 @@ func NewPhotoRepository(client *dynamodb.Client, tableName string) *PhotoReposit
 }
 
 type photoItem struct {
-	PK            string            `dynamodbav:"PK"`
-	SK            string            `dynamodbav:"SK"`
-	PhotoID       string            `dynamodbav:"photoId"`
-	GalleryID     string            `dynamodbav:"galleryId"`
-	FileName      string            `dynamodbav:"fileName"`
-	OriginalKey   string            `dynamodbav:"originalKey"`
-	OptimizedKey  string            `dynamodbav:"optimizedKey"`
-	ThumbnailKey  string            `dynamodbav:"thumbnailKey"`
-	MimeType      string            `dynamodbav:"mimeType"`
-	Size          int64             `dynamodbav:"size"`
-	Width         int               `dynamodbav:"width"`
-	Height        int               `dynamodbav:"height"`
-	UploadedAt    string            `dynamodbav:"uploadedAt"`
-	FavoriteCount int               `dynamodbav:"favoriteCount"`
-	DownloadCount int               `dynamodbav:"downloadCount"`
-	Metadata      map[string]string `dynamodbav:"metadata,omitempty"`
+	PK               string            `dynamodbav:"PK"`
+	SK               string            `dynamodbav:"SK"`
+	PhotoID          string            `dynamodbav:"photoId"`
+	GalleryID        string            `dynamodbav:"galleryId"`
+	FileName         string            `dynamodbav:"fileName"`
+	OriginalKey      string            `dynamodbav:"originalKey"`
+	OptimizedKey     string            `dynamodbav:"optimizedKey,omitempty"`
+	ThumbnailKey     string            `dynamodbav:"thumbnailKey,omitempty"`
+	MimeType         string            `dynamodbav:"mimeType"`
+	Size             int64             `dynamodbav:"size"`
+	Width            int               `dynamodbav:"width,omitempty"`
+	Height           int               `dynamodbav:"height,omitempty"`
+	ProcessingStatus string            `dynamodbav:"processingStatus"`
+	UploadedAt       string            `dynamodbav:"uploadedAt"`
+	ProcessedAt      string            `dynamodbav:"processedAt,omitempty"`
+	FavoriteCount    int               `dynamodbav:"favoriteCount"`
+	DownloadCount    int               `dynamodbav:"downloadCount"`
+	Metadata         map[string]string `dynamodbav:"metadata,omitempty"`
 }
 
 func (r *PhotoRepository) Create(ctx context.Context, photo *repository.Photo) error {
 	item := photoItem{
-		PK:            fmt.Sprintf("GALLERY#%s", photo.GalleryID),
-		SK:            fmt.Sprintf("PHOTO#%s", photo.PhotoID),
-		PhotoID:       photo.PhotoID,
-		GalleryID:     photo.GalleryID,
-		FileName:      photo.FileName,
-		OriginalKey:   photo.OriginalKey,
-		OptimizedKey:  photo.OptimizedKey,
-		ThumbnailKey:  photo.ThumbnailKey,
-		MimeType:      photo.MimeType,
-		Size:          photo.Size,
-		Width:         photo.Width,
-		Height:        photo.Height,
-		UploadedAt:    photo.UploadedAt.Format("2006-01-02T15:04:05Z07:00"),
-		FavoriteCount: photo.FavoriteCount,
-		DownloadCount: photo.DownloadCount,
-		Metadata:      photo.Metadata,
+		PK:               fmt.Sprintf("GALLERY#%s", photo.GalleryID),
+		SK:               fmt.Sprintf("PHOTO#%s", photo.PhotoID),
+		PhotoID:          photo.PhotoID,
+		GalleryID:        photo.GalleryID,
+		FileName:         photo.FileName,
+		OriginalKey:      photo.OriginalKey,
+		OptimizedKey:     photo.OptimizedKey,
+		ThumbnailKey:     photo.ThumbnailKey,
+		MimeType:         photo.MimeType,
+		Size:             photo.Size,
+		Width:            photo.Width,
+		Height:           photo.Height,
+		ProcessingStatus: photo.ProcessingStatus,
+		UploadedAt:       photo.UploadedAt.Format("2006-01-02T15:04:05Z07:00"),
+		FavoriteCount:    photo.FavoriteCount,
+		DownloadCount:    photo.DownloadCount,
+		Metadata:         photo.Metadata,
+	}
+
+	if photo.ProcessedAt != nil {
+		item.ProcessedAt = photo.ProcessedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 
 	av, err := attributevalue.MarshalMap(item)
@@ -150,22 +157,27 @@ func (r *PhotoRepository) ListByGallery(ctx context.Context, galleryID string, l
 
 func (r *PhotoRepository) Update(ctx context.Context, photo *repository.Photo) error {
 	item := photoItem{
-		PK:            fmt.Sprintf("GALLERY#%s", photo.GalleryID),
-		SK:            fmt.Sprintf("PHOTO#%s", photo.PhotoID),
-		PhotoID:       photo.PhotoID,
-		GalleryID:     photo.GalleryID,
-		FileName:      photo.FileName,
-		OriginalKey:   photo.OriginalKey,
-		OptimizedKey:  photo.OptimizedKey,
-		ThumbnailKey:  photo.ThumbnailKey,
-		MimeType:      photo.MimeType,
-		Size:          photo.Size,
-		Width:         photo.Width,
-		Height:        photo.Height,
-		UploadedAt:    photo.UploadedAt.Format("2006-01-02T15:04:05Z07:00"),
-		FavoriteCount: photo.FavoriteCount,
-		DownloadCount: photo.DownloadCount,
-		Metadata:      photo.Metadata,
+		PK:               fmt.Sprintf("GALLERY#%s", photo.GalleryID),
+		SK:               fmt.Sprintf("PHOTO#%s", photo.PhotoID),
+		PhotoID:          photo.PhotoID,
+		GalleryID:        photo.GalleryID,
+		FileName:         photo.FileName,
+		OriginalKey:      photo.OriginalKey,
+		OptimizedKey:     photo.OptimizedKey,
+		ThumbnailKey:     photo.ThumbnailKey,
+		MimeType:         photo.MimeType,
+		Size:             photo.Size,
+		Width:            photo.Width,
+		Height:           photo.Height,
+		ProcessingStatus: photo.ProcessingStatus,
+		UploadedAt:       photo.UploadedAt.Format("2006-01-02T15:04:05Z07:00"),
+		FavoriteCount:    photo.FavoriteCount,
+		DownloadCount:    photo.DownloadCount,
+		Metadata:         photo.Metadata,
+	}
+
+	if photo.ProcessedAt != nil {
+		item.ProcessedAt = photo.ProcessedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 
 	av, err := attributevalue.MarshalMap(item)
@@ -252,19 +264,20 @@ func (r *PhotoRepository) IncrementDownloadCount(ctx context.Context, photoID st
 
 func itemToPhoto(item *photoItem) *repository.Photo {
 	photo := &repository.Photo{
-		PhotoID:       item.PhotoID,
-		GalleryID:     item.GalleryID,
-		FileName:      item.FileName,
-		OriginalKey:   item.OriginalKey,
-		OptimizedKey:  item.OptimizedKey,
-		ThumbnailKey:  item.ThumbnailKey,
-		MimeType:      item.MimeType,
-		Size:          item.Size,
-		Width:         item.Width,
-		Height:        item.Height,
-		FavoriteCount: item.FavoriteCount,
-		DownloadCount: item.DownloadCount,
-		Metadata:      item.Metadata,
+		PhotoID:          item.PhotoID,
+		GalleryID:        item.GalleryID,
+		FileName:         item.FileName,
+		OriginalKey:      item.OriginalKey,
+		OptimizedKey:     item.OptimizedKey,
+		ThumbnailKey:     item.ThumbnailKey,
+		MimeType:         item.MimeType,
+		Size:             item.Size,
+		Width:            item.Width,
+		Height:           item.Height,
+		ProcessingStatus: item.ProcessingStatus,
+		FavoriteCount:    item.FavoriteCount,
+		DownloadCount:    item.DownloadCount,
+		Metadata:         item.Metadata,
 	}
 
 	// Parse UploadedAt
