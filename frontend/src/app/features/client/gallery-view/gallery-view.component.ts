@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ClientSessionService } from '../../../core/services/client-session.service';
 import { ApiService } from '../../../core/services/api.service';
+import { PhotoUrlService } from '../../../core/services/photo-url.service';
 import { Gallery } from '../../../core/models/gallery.model';
 import { Photo } from '../../../core/models/photo.model';
 
@@ -371,6 +372,7 @@ import { Photo } from '../../../core/models/photo.model';
 export class GalleryViewComponent implements OnInit {
   private sessionService = inject(ClientSessionService);
   private apiService = inject(ApiService);
+  private photoUrlService = inject(PhotoUrlService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
@@ -476,7 +478,6 @@ export class GalleryViewComponent implements OnInit {
   }
 
   getThumbnailUrl(photo: Photo): string {
-    // TODO: Return actual thumbnail URL from CDN
-    return `https://via.placeholder.com/600x450?text=${encodeURIComponent(photo.fileName)}`;
+    return this.photoUrlService.getThumbnailUrl(photo);
   }
 }
