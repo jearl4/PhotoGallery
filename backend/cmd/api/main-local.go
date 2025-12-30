@@ -125,8 +125,8 @@ func initializeLocalApp() (*LocalApp, error) {
 		time.Duration(cfg.SignedURLExpiration)*time.Hour,
 	)
 
-	galleryService := gallery.NewService(galleryRepo, photoRepo)
-	photoService := photo.NewService(photoRepo, favoriteRepo, storageService)
+	galleryService := gallery.NewService(galleryRepo, photoRepo, storageService)
+	photoService := photo.NewService(photoRepo, galleryRepo, favoriteRepo, storageService)
 	authService := cognitoAuth.NewService(
 		cfg.CognitoUserPoolID,
 		cfg.CognitoClientID,

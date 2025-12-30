@@ -252,9 +252,19 @@ export class GalleryAccessComponent implements OnInit {
       },
       error: (err) => {
         console.error('Password verification failed:', err);
-        this.errorMessage.set(
-          err.error?.message || 'Invalid password. Please try again.'
-        );
+        let message = 'Invalid password. Please try again.';
+
+        if (err.status === 404) {
+          message = 'Gallery not found. Please check the URL.';
+        } else if (err.status === 401) {
+          message = 'Invalid password. Please try again.';
+        } else if (err.error?.error) {
+          message = err.error.error;
+        } else if (err.error?.message) {
+          message = err.error.message;
+        }
+
+        this.errorMessage.set(message);
         this.isSubmitting.set(false);
         this.accessForm.patchValue({ password: '' });
       }

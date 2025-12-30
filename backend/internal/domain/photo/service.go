@@ -43,9 +43,9 @@ type UploadURLRequest struct {
 
 // UploadURLResponse contains the upload URL and photo metadata
 type UploadURLResponse struct {
-	PhotoID   string
-	UploadURL string
-	Key       string
+	PhotoID   string `json:"photoId"`
+	UploadURL string `json:"uploadUrl"`
+	Key       string `json:"key"`
 }
 
 // GenerateUploadURL creates a presigned URL for uploading a photo

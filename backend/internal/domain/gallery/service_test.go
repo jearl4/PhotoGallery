@@ -121,25 +121,65 @@ func (m *mockGalleryRepo) ListExpired(ctx context.Context, limit int) ([]*reposi
 	return result, nil
 }
 
-type mockPhotoRepo struct{}
+type mockPhotoRepo struct {
+	photos    map[string]*repository.Photo
+	deleteErr error
+}
 
-func (m *mockPhotoRepo) Create(ctx context.Context, photo *repository.Photo) error              { return nil }
-func (m *mockPhotoRepo) GetByID(ctx context.Context, photoID string) (*repository.Photo, error) { return nil, nil }
+func newMockPhotoRepo() *mockPhotoRepo {
+	return &mockPhotoRepo{
+		photos: make(map[string]*repository.Photo),
+	}
+}
+
+func (m *mockPhotoRepo) Create(ctx context.Context, photo *repository.Photo) error {
+	m.photos[photo.PhotoID] = photo
+	return nil
+}
+func (m *mockPhotoRepo) GetByID(ctx context.Context, photoID string) (*repository.Photo, error) {
+	return m.photos[photoID], nil
+}
 func (m *mockPhotoRepo) ListByGallery(ctx context.Context, galleryID string, limit int, lastKey map[string]interface{}) ([]*repository.Photo, map[string]interface{}, error) {
-	return nil, nil, nil
+	var result []*repository.Photo
+	for _, p := range m.photos {
+		if p.GalleryID == galleryID {
+			result = append(result, p)
+		}
+	}
+	return result, nil, nil
 }
 func (m *mockPhotoRepo) Update(ctx context.Context, photo *repository.Photo) error { return nil }
-func (m *mockPhotoRepo) Delete(ctx context.Context, photoID string) error          { return nil }
+func (m *mockPhotoRepo) Delete(ctx context.Context, photoID string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	delete(m.photos, photoID)
+	return nil
+}
 func (m *mockPhotoRepo) IncrementFavoriteCount(ctx context.Context, photoID string, delta int) error {
 	return nil
 }
 func (m *mockPhotoRepo) IncrementDownloadCount(ctx context.Context, photoID string) error { return nil }
 
+type mockStorageService struct {
+	deletePhotoErr error
+	deletedPhotos  []string
+}
+
+func (m *mockStorageService) DeletePhoto(ctx context.Context, originalKey, optimizedKey, thumbnailKey string) error {
+	if m.deletePhotoErr != nil {
+		return m.deletePhotoErr
+	}
+	m.deletedPhotos = append(m.deletedPhotos, originalKey)
+	return nil
+}
+
 // Tests
 func TestCreateGallery(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	tests := []struct {
 		name    string
@@ -229,8 +269,9 @@ func TestCreateGallery(t *testing.T) {
 
 func TestCreateGalleryDuplicateURL(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	// Create first gallery
 	req1 := CreateGalleryRequest{
@@ -264,8 +305,9 @@ func TestCreateGalleryDuplicateURL(t *testing.T) {
 
 func TestVerifyPassword(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	// Create a gallery
 	req := CreateGalleryRequest{
@@ -327,8 +369,9 @@ func TestVerifyPassword(t *testing.T) {
 
 func TestVerifyPasswordExpiredGallery(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	// Create expired gallery
 	expiresAt := time.Now().Add(-24 * time.Hour)
@@ -349,8 +392,9 @@ func TestVerifyPasswordExpiredGallery(t *testing.T) {
 
 func TestUpdateGallery(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	// Create a gallery
 	createReq := CreateGalleryRequest{
@@ -393,8 +437,9 @@ func TestUpdateGallery(t *testing.T) {
 
 func TestDeleteGallery(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	// Create a gallery
 	req := CreateGalleryRequest{
@@ -420,8 +465,9 @@ func TestDeleteGallery(t *testing.T) {
 
 func TestSetExpiration(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	// Create a gallery
 	req := CreateGalleryRequest{
@@ -450,8 +496,9 @@ func TestSetExpiration(t *testing.T) {
 
 func TestProcessExpiredGalleries(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	// Create expired gallery
 	pastTime := time.Now().Add(-24 * time.Hour)
@@ -479,8 +526,9 @@ func TestProcessExpiredGalleries(t *testing.T) {
 
 func TestListByPhotographer(t *testing.T) {
 	galleryRepo := newMockGalleryRepo()
-	photoRepo := &mockPhotoRepo{}
-	service := NewService(galleryRepo, photoRepo)
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{}
+	service := NewService(galleryRepo, photoRepo, storageService)
 
 	photographerID := "user_123"
 
@@ -502,5 +550,66 @@ func TestListByPhotographer(t *testing.T) {
 
 	if len(galleries) != 3 {
 		t.Errorf("Expected 3 galleries, got %d", len(galleries))
+	}
+}
+
+func TestDeleteGalleryWithPhotos(t *testing.T) {
+	galleryRepo := newMockGalleryRepo()
+	photoRepo := newMockPhotoRepo()
+	storageService := &mockStorageService{deletedPhotos: []string{}}
+	service := NewService(galleryRepo, photoRepo, storageService)
+
+	// Create a gallery
+	req := CreateGalleryRequest{
+		PhotographerID: "user_123",
+		Name:           "Test Gallery",
+		CustomURL:      "test-gallery",
+		Password:       "password123",
+	}
+	gallery, _ := service.Create(context.Background(), req)
+
+	// Add some photos
+	photos := []*repository.Photo{
+		{
+			PhotoID:      "photo_1",
+			GalleryID:    gallery.GalleryID,
+			OriginalKey:  gallery.GalleryID + "/photo_1/original.jpg",
+			OptimizedKey: gallery.GalleryID + "/photo_1/optimized.jpg",
+			ThumbnailKey: gallery.GalleryID + "/photo_1/thumbnail.jpg",
+		},
+		{
+			PhotoID:      "photo_2",
+			GalleryID:    gallery.GalleryID,
+			OriginalKey:  gallery.GalleryID + "/photo_2/original.jpg",
+			OptimizedKey: gallery.GalleryID + "/photo_2/optimized.jpg",
+			ThumbnailKey: gallery.GalleryID + "/photo_2/thumbnail.jpg",
+		},
+	}
+
+	for _, photo := range photos {
+		photoRepo.Create(context.Background(), photo)
+	}
+
+	// Delete gallery
+	err := service.Delete(context.Background(), gallery.GalleryID)
+	if err != nil {
+		t.Fatalf("Delete() error: %v", err)
+	}
+
+	// Verify gallery is deleted
+	result, _ := service.GetByID(context.Background(), gallery.GalleryID)
+	if result != nil {
+		t.Error("Gallery should be deleted")
+	}
+
+	// Verify photos are deleted from repo
+	remainingPhotos, _, _ := photoRepo.ListByGallery(context.Background(), gallery.GalleryID, 100, nil)
+	if len(remainingPhotos) != 0 {
+		t.Errorf("Expected 0 photos, got %d", len(remainingPhotos))
+	}
+
+	// Verify S3 delete was called for each photo
+	if len(storageService.deletedPhotos) != 2 {
+		t.Errorf("Expected 2 S3 deletions, got %d", len(storageService.deletedPhotos))
 	}
 }

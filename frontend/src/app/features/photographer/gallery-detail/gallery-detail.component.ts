@@ -17,6 +17,16 @@ import { Photo } from '../../../core/models/photo.model';
           <div class="spinner"></div>
           <p>Loading gallery...</p>
         </div>
+      } @else if (error()) {
+        <div class="error-container">
+          <div class="error-icon">⚠️</div>
+          <h2>Failed to Load Gallery</h2>
+          <p>{{ error() }}</p>
+          <div class="error-actions">
+            <button class="btn btn-primary" (click)="loadGallery()">Try Again</button>
+            <button class="btn btn-secondary" (click)="goBack()">Back to Dashboard</button>
+          </div>
+        </div>
       } @else if (gallery()) {
         <!-- Header -->
         <div class="header">
@@ -49,6 +59,9 @@ import { Photo } from '../../../core/models/photo.model';
               </div>
 
               <div class="header-actions">
+                <button class="btn btn-danger" (click)="deleteGallery()">
+                  Delete Gallery
+                </button>
                 <button class="btn btn-secondary" (click)="editGallery()">
                   Edit Gallery
                 </button>
@@ -71,15 +84,17 @@ import { Photo } from '../../../core/models/photo.model';
                 </div>
               </div>
 
-              <div class="info-card">
-                <div class="info-label">Password</div>
-                <div class="info-value">
-                  {{ showPassword() ? '••••••••' : '••••••••' }}
-                  <button class="btn-copy" (click)="togglePassword()">
-                    {{ showPassword() ? '👁' : '👁' }}
-                  </button>
+              @if (gallery()!.password) {
+                <div class="info-card">
+                  <div class="info-label">Password</div>
+                  <div class="info-value">
+                    <code>{{ showPassword() ? gallery()!.password : '••••••••' }}</code>
+                    <button class="btn-copy" (click)="togglePassword()" [title]="showPassword() ? 'Hide password' : 'Show password'">
+                      {{ showPassword() ? '🙈' : '👁' }}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              }
 
               <div class="info-card">
                 <div class="info-label">Status</div>
@@ -180,6 +195,41 @@ import { Photo } from '../../../core/models/photo.model';
           </div>
         }
       }
+
+      <!-- Photo Viewer Modal -->
+      @if (selectedPhoto()) {
+        <div class="modal-overlay" (click)="closeViewer()">
+          <div class="modal-content" (click)="$event.stopPropagation()">
+            <button class="btn-close" (click)="closeViewer()">✕</button>
+
+            <div class="photo-viewer">
+              <img [src]="getOptimizedUrl(selectedPhoto()!)" [alt]="selectedPhoto()!.fileName">
+            </div>
+
+            <div class="photo-details">
+              <h3>{{ selectedPhoto()!.fileName }}</h3>
+              <div class="details-grid">
+                <div class="detail-item">
+                  <span class="detail-label">Size:</span>
+                  <span>{{ formatFileSize(selectedPhoto()!.size) }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Dimensions:</span>
+                  <span>{{ selectedPhoto()!.width }} × {{ selectedPhoto()!.height }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Format:</span>
+                  <span>{{ selectedPhoto()!.mimeType }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Favorites:</span>
+                  <span>{{ selectedPhoto()!.favoriteCount }} ♥</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -189,9 +239,38 @@ import { Photo } from '../../../core/models/photo.model';
     }
 
     .loading-container,
-    .loading-photos {
+    .loading-photos,
+    .error-container {
       text-align: center;
       padding: 80px 20px;
+    }
+
+    .error-container {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    .error-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+
+    .error-container h2 {
+      margin: 0 0 12px 0;
+      font-size: 24px;
+      color: #1a1a1a;
+    }
+
+    .error-container p {
+      margin: 0 0 32px 0;
+      color: #666;
+      font-size: 16px;
+    }
+
+    .error-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
     }
 
     .spinner {
@@ -312,6 +391,22 @@ import { Photo } from '../../../core/models/photo.model';
 
     .btn-secondary:hover {
       background: #e5e7eb;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
     }
 
     .btn-icon {
@@ -555,6 +650,101 @@ import { Photo } from '../../../core/models/photo.model';
       margin-top: 4px;
     }
 
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      max-width: 1200px;
+      max-height: 90vh;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 40px;
+      height: 40px;
+      border: none;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border-radius: 50%;
+      font-size: 20px;
+      cursor: pointer;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .btn-close:hover {
+      background: rgba(0, 0, 0, 0.7);
+      transform: scale(1.1);
+    }
+
+    .photo-viewer {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      min-height: 400px;
+      max-height: 70vh;
+      overflow: hidden;
+    }
+
+    .photo-viewer img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .photo-details {
+      padding: 24px;
+      background: white;
+    }
+
+    .photo-details h3 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      color: #1a1a1a;
+    }
+
+    .details-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .detail-item {
+      display: flex;
+      gap: 8px;
+      font-size: 14px;
+    }
+
+    .detail-label {
+      color: #666;
+      font-weight: 600;
+    }
+
     @media (max-width: 768px) {
       .header-info {
         flex-direction: column;
@@ -572,6 +762,18 @@ import { Photo } from '../../../core/models/photo.model';
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         gap: 12px;
       }
+
+      .modal-content {
+        max-height: 95vh;
+      }
+
+      .photo-viewer {
+        max-height: 60vh;
+      }
+
+      .details-grid {
+        grid-template-columns: 1fr;
+      }
     }
   `]
 })
@@ -588,6 +790,8 @@ export class GalleryDetailComponent implements OnInit {
   loadingPhotos = signal(false);
   showPassword = signal(false);
   urlCopied = signal(false);
+  error = signal<string | null>(null);
+  selectedPhoto = signal<Photo | null>(null);
 
   galleryId!: string;
 
@@ -599,6 +803,8 @@ export class GalleryDetailComponent implements OnInit {
   }
 
   loadGallery(): void {
+    this.error.set(null); // Clear previous errors
+    this.isLoading.set(true); // Set loading state
     this.apiService.getGallery(this.galleryId).subscribe({
       next: (gallery) => {
         this.gallery.set(gallery);
@@ -606,6 +812,7 @@ export class GalleryDetailComponent implements OnInit {
       },
       error: (err) => {
         console.error('Failed to load gallery:', err);
+        this.error.set(err.error?.message || 'Failed to load gallery. Please try again.');
         this.isLoading.set(false);
       }
     });
@@ -648,9 +855,37 @@ export class GalleryDetailComponent implements OnInit {
     this.router.navigate(['/photographer/galleries', this.galleryId, 'edit']);
   }
 
+  deleteGallery(): void {
+    const gallery = this.gallery();
+    if (!gallery) return;
+
+    const confirmMessage = gallery.photoCount > 0
+      ? `Are you sure you want to delete "${gallery.name}"? This will permanently delete the gallery and all ${gallery.photoCount} photos. This action cannot be undone.`
+      : `Are you sure you want to delete "${gallery.name}"? This action cannot be undone.`;
+
+    if (confirm(confirmMessage)) {
+      this.apiService.deleteGallery(this.galleryId).subscribe({
+        next: () => {
+          this.router.navigate(['/photographer/dashboard']);
+        },
+        error: (err) => {
+          console.error('Failed to delete gallery:', err);
+          alert('Failed to delete gallery. Please try again.');
+        }
+      });
+    }
+  }
+
   viewPhoto(photo: Photo): void {
-    // TODO: Open lightbox
-    console.log('View photo:', photo);
+    this.selectedPhoto.set(photo);
+  }
+
+  closeViewer(): void {
+    this.selectedPhoto.set(null);
+  }
+
+  getOptimizedUrl(photo: Photo): string {
+    return this.photoUrlService.getOptimizedUrl(photo);
   }
 
   deletePhoto(photo: Photo): void {

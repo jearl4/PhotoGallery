@@ -101,7 +101,7 @@ func initializeApp() (*App, error) {
 		time.Duration(cfg.SignedURLExpiration)*time.Hour,
 	)
 
-	galleryService := gallery.NewService(galleryRepo, photoRepo)
+	galleryService := gallery.NewService(galleryRepo, photoRepo, storageService)
 	photoService := photo.NewService(photoRepo, galleryRepo, favoriteRepo, storageService)
 
 	// Generate JWT secret for sessions (in production, use AWS Secrets Manager)
@@ -216,29 +216,37 @@ func (app *App) routePhotographerRequests(ctx context.Context, req events.APIGat
 		return invokeHandler(ctx, req, app.galleryHandler.ListGalleries)
 	}
 	if matchPath(path, "/api/v1/galleries/{id}") && method == "GET" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}")
 		return invokeHandler(ctx, req, app.galleryHandler.GetGallery)
 	}
 	if matchPath(path, "/api/v1/galleries/{id}") && method == "PUT" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}")
 		return invokeHandler(ctx, req, app.galleryHandler.UpdateGallery)
 	}
 	if matchPath(path, "/api/v1/galleries/{id}") && method == "DELETE" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}")
 		return invokeHandler(ctx, req, app.galleryHandler.DeleteGallery)
 	}
 	if matchPath(path, "/api/v1/galleries/{id}/expire") && method == "POST" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}/expire")
 		return invokeHandler(ctx, req, app.galleryHandler.SetExpiration)
 	}
 
 	// Photo routes
 	if matchPath(path, "/api/v1/galleries/{id}/photos/upload-url") && method == "POST" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}/photos/upload-url")
 		return invokeHandler(ctx, req, app.photoHandler.GetUploadURL)
 	}
 	if matchPath(path, "/api/v1/galleries/{id}/photos") && method == "GET" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}/photos")
 		return invokeHandler(ctx, req, app.photoHandler.ListPhotos)
 	}
 	if matchPath(path, "/api/v1/galleries/{galleryId}/photos/{photoId}") && method == "DELETE" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{galleryId}/photos/{photoId}")
 		return invokeHandler(ctx, req, app.photoHandler.DeletePhoto)
 	}
 	if matchPath(path, "/api/v1/galleries/{id}/favorites") && method == "GET" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}/favorites")
 		return invokeHandler(ctx, req, app.photoHandler.GetFavorites)
 	}
 
@@ -265,15 +273,19 @@ func (app *App) routeClientRequests(ctx context.Context, req events.APIGatewayPr
 
 	// Client gallery routes
 	if matchPath(path, "/api/v1/client/galleries/{customUrl}") && method == "GET" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/client/galleries/{customUrl}")
 		return invokeHandler(ctx, req, app.clientHandler.GetGallery)
 	}
 	if matchPath(path, "/api/v1/client/galleries/{customUrl}/photos") && method == "GET" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/client/galleries/{customUrl}/photos")
 		return invokeHandler(ctx, req, app.clientHandler.ListPhotos)
 	}
 	if matchPath(path, "/api/v1/client/photos/{photoId}/download-url") && method == "GET" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/client/photos/{photoId}/download-url")
 		return invokeHandler(ctx, req, app.clientHandler.GetDownloadURL)
 	}
 	if matchPath(path, "/api/v1/client/photos/{photoId}/favorite") && method == "POST" {
+		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/client/photos/{photoId}/favorite")
 		return invokeHandler(ctx, req, app.clientHandler.ToggleFavorite)
 	}
 	if path == "/api/v1/client/session/favorites" && method == "GET" {
@@ -336,12 +348,32 @@ func matchPath(path, pattern string) bool {
 }
 
 func extractPathParams(ctx context.Context, req events.APIGatewayProxyRequest) context.Context {
-	// Extract path parameters and add to context
+	// Extract path parameters from PathParameters map (populated by API Gateway)
 	if req.PathParameters != nil {
 		for key, value := range req.PathParameters {
 			ctx = context.WithValue(ctx, key, value)
 		}
 	}
+	return ctx
+}
+
+// extractPathParamsFromPattern extracts path parameters by matching path against pattern
+func extractPathParamsFromPattern(ctx context.Context, path, pattern string) context.Context {
+	parts := strings.Split(path, "/")
+	patternParts := strings.Split(pattern, "/")
+
+	if len(parts) != len(patternParts) {
+		return ctx
+	}
+
+	for i := range parts {
+		if strings.HasPrefix(patternParts[i], "{") && strings.HasSuffix(patternParts[i], "}") {
+			// Extract parameter name (remove { and })
+			paramName := patternParts[i][1 : len(patternParts[i])-1]
+			ctx = context.WithValue(ctx, paramName, parts[i])
+		}
+	}
+
 	return ctx
 }
 

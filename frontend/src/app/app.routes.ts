@@ -50,6 +50,10 @@ export const routes: Routes = [
 
   // Client Routes (Public)
   {
+    path: 'client/access',
+    loadComponent: () => import('./features/client/gallery-code/gallery-code.component').then(m => m.GalleryCodeComponent)
+  },
+  {
     path: 'gallery/:customUrl',
     loadComponent: () => import('./features/client/gallery-access/gallery-access.component').then(m => m.GalleryAccessComponent)
   },

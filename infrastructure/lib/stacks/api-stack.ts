@@ -63,6 +63,7 @@ export class ApiStack extends cdk.Stack {
     });
 
     // Grant permissions to DynamoDB tables
+    databaseStack.photographersTable.grantReadWriteData(this.apiHandler);
     databaseStack.galleriesTable.grantReadWriteData(this.apiHandler);
     databaseStack.photosTable.grantReadWriteData(this.apiHandler);
     databaseStack.favoritesTable.grantReadWriteData(this.apiHandler);

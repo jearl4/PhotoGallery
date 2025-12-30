@@ -88,37 +88,45 @@ func main() {
 }
 
 // handleS3Event processes S3 events when a photo is uploaded
-func (app *App) handleS3Event(ctx context.Context, s3Event events.S3Event) error {
-	log.Printf("Processing %d S3 event records", len(s3Event.Records))
+func (app *App) handleS3Event(ctx context.Context, sqsEvent events.SQSEvent) error {
+	log.Printf("Processing %d SQS event records", len(sqsEvent.Records))
 
-	for _, record := range s3Event.Records {
-		s3Entity := record.S3
-		bucketName := s3Entity.Bucket.Name
-		objectKey := s3Entity.Object.Key
-
-		log.Printf("Processing object: %s/%s", bucketName, objectKey)
-
-		// Extract photo ID from the object key
-		// Expected format: galleries/{galleryID}/photos/{photoID}/original.{ext}
-		photoID, err := extractPhotoID(objectKey)
-		if err != nil {
-			log.Printf("Failed to extract photo ID from key %s: %v", objectKey, err)
+	for _, sqsRecord := range sqsEvent.Records {
+		// Parse S3 event from SQS message body
+		var s3Event events.S3Event
+		if err := json.Unmarshal([]byte(sqsRecord.Body), &s3Event); err != nil {
+			log.Printf("Failed to unmarshal S3 event: %v", err)
 			continue
 		}
 
-		// Process the photo
-		if err := app.processPhoto(ctx, photoID, bucketName, objectKey); err != nil {
-			log.Printf("Failed to process photo %s: %v", photoID, err)
+		for _, record := range s3Event.Records {
+			s3Entity := record.S3
+			bucketName := s3Entity.Bucket.Name
+			objectKey := s3Entity.Object.Key
 
-			// Update photo status to failed
-			if updateErr := app.updatePhotoStatus(ctx, photoID, "failed"); updateErr != nil {
-				log.Printf("Failed to update photo status to failed: %v", updateErr)
+			log.Printf("Processing object: %s/%s", bucketName, objectKey)
+
+			// Extract photo ID from the object key
+			photoID, err := extractPhotoID(objectKey)
+			if err != nil {
+				log.Printf("Failed to extract photo ID from key %s: %v", objectKey, err)
+				continue
 			}
 
-			continue
-		}
+			// Process the photo
+			if err := app.processPhoto(ctx, photoID, bucketName, objectKey); err != nil {
+				log.Printf("Failed to process photo %s: %v", photoID, err)
 
-		log.Printf("Successfully processed photo %s", photoID)
+				// Update photo status to failed
+				if updateErr := app.updatePhotoStatus(ctx, photoID, "failed"); updateErr != nil {
+					log.Printf("Failed to update photo status to failed: %v", updateErr)
+				}
+
+				continue
+			}
+
+			log.Printf("Successfully processed photo %s", photoID)
+		}
 	}
 
 	return nil
@@ -126,11 +134,6 @@ func (app *App) handleS3Event(ctx context.Context, s3Event events.S3Event) error
 
 // processPhoto downloads the original photo, generates thumbnails and optimized versions
 func (app *App) processPhoto(ctx context.Context, photoID, bucketName, objectKey string) error {
-	// Update status to processing
-	if err := app.updatePhotoStatus(ctx, photoID, "processing"); err != nil {
-		return fmt.Errorf("failed to update status to processing: %w", err)
-	}
-
 	// Download the original photo from S3
 	log.Printf("Downloading original photo from S3: %s/%s", bucketName, objectKey)
 	getObjectOutput, err := app.s3Client.GetObject(ctx, &s3.GetObjectInput{
@@ -178,8 +181,8 @@ func (app *App) processPhoto(ctx context.Context, photoID, bucketName, objectKey
 	}
 
 	// Upload thumbnail to S3
-	thumbnailKey := strings.Replace(objectKey, "/original.", "/thumbnail.", 1)
-	thumbnailKey = strings.Replace(thumbnailKey, app.cfg.S3BucketOriginal, "", 1)
+	// Use the same key structure but change extension to .jpg for processed images
+	thumbnailKey := changeExtension(objectKey, ".jpg")
 	if err := app.uploadToS3(ctx, app.cfg.S3BucketThumbnail, thumbnailKey, thumbnailData, "image/jpeg"); err != nil {
 		return fmt.Errorf("failed to upload thumbnail: %w", err)
 	}
@@ -192,8 +195,8 @@ func (app *App) processPhoto(ctx context.Context, photoID, bucketName, objectKey
 	}
 
 	// Upload optimized version to S3
-	optimizedKey := strings.Replace(objectKey, "/original.", "/optimized.", 1)
-	optimizedKey = strings.Replace(optimizedKey, app.cfg.S3BucketOriginal, "", 1)
+	// Use the same key structure but change extension to .jpg for processed images
+	optimizedKey := changeExtension(objectKey, ".jpg")
 	if err := app.uploadToS3(ctx, app.cfg.S3BucketOptimized, optimizedKey, optimizedData, "image/jpeg"); err != nil {
 		return fmt.Errorf("failed to upload optimized version: %w", err)
 	}
@@ -202,13 +205,60 @@ func (app *App) processPhoto(ctx context.Context, photoID, bucketName, objectKey
 	// Can be re-enabled later with pure Go library or CGO-enabled build
 	log.Printf("WebP conversion skipped for photo %s (not currently supported)", photoID)
 
-	// Update photo record in DynamoDB
+	// Get or create photo record in DynamoDB
 	photo, err := app.photoRepo.GetByID(ctx, photoID)
 	if err != nil {
 		return fmt.Errorf("failed to get photo from database: %w", err)
 	}
+
+	// If photo doesn't exist, create it
 	if photo == nil {
-		return fmt.Errorf("photo not found in database: %s", photoID)
+		// Extract gallery ID and filename from object key
+		// Format: {galleryID}/{photoID}/{filename}
+		parts := strings.Split(objectKey, "/")
+		if len(parts) < 3 {
+			return fmt.Errorf("invalid object key format: %s", objectKey)
+		}
+
+		galleryID := parts[0]
+		fileName := parts[2]
+
+		// Determine mime type from file extension
+		mimeType := "image/jpeg"
+		if strings.HasSuffix(strings.ToLower(fileName), ".png") {
+			mimeType = "image/png"
+		} else if strings.HasSuffix(strings.ToLower(fileName), ".webp") {
+			mimeType = "image/webp"
+		}
+
+		// Get file size
+		var size int64
+		if getObjectOutput.ContentLength != nil {
+			size = *getObjectOutput.ContentLength
+		}
+
+		now := time.Now()
+		photo = &repository.Photo{
+			PhotoID:          photoID,
+			GalleryID:        galleryID,
+			FileName:         fileName,
+			OriginalKey:      objectKey,
+			MimeType:         mimeType,
+			Size:             size,
+			Width:            metadata.Width,
+			Height:           metadata.Height,
+			UploadedAt:       now,
+			ProcessingStatus: "processing",
+			FavoriteCount:    0,
+			DownloadCount:    0,
+			Metadata:         make(map[string]string),
+		}
+
+		if err := app.photoRepo.Create(ctx, photo); err != nil {
+			return fmt.Errorf("failed to create photo in database: %w", err)
+		}
+
+		log.Printf("Created photo record for %s", photoID)
 	}
 
 	// Update photo with processing results
@@ -289,22 +339,21 @@ func (app *App) updatePhotoStatus(ctx context.Context, photoID, status string) e
 	return app.photoRepo.Update(ctx, photo)
 }
 
-// extractPhotoID extracts the photo ID from the S3 object key
-// Expected format: galleries/{galleryID}/photos/{photoID}/original.{ext}
+// extractPhotoID extracts the photo ID and gallery ID from the S3 object key
+// Expected format: {galleryID}/{photoID}/{filename}
 func extractPhotoID(objectKey string) (string, error) {
 	parts := strings.Split(objectKey, "/")
-	if len(parts) < 4 {
+	if len(parts) < 3 {
 		return "", fmt.Errorf("invalid object key format: %s", objectKey)
 	}
 
-	// Find the "photos" part
-	for i, part := range parts {
-		if part == "photos" && i+1 < len(parts) {
-			return parts[i+1], nil
-		}
+	// The photoID is the second part: galleryID/photoID/filename
+	photoID := parts[1]
+	if !strings.HasPrefix(photoID, "photo_") {
+		return "", fmt.Errorf("invalid photo ID format in key: %s", objectKey)
 	}
 
-	return "", fmt.Errorf("could not find photo ID in key: %s", objectKey)
+	return photoID, nil
 }
 
 // changeExtension changes the file extension of a key
