@@ -4,6 +4,7 @@ export interface Gallery {
   name: string;
   description: string;
   customUrl: string;
+  password: string;
   createdAt: string;
   expiresAt?: string;
   status: 'active' | 'expired' | 'archived';

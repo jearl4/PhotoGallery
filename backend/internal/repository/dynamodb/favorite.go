@@ -110,13 +110,12 @@ func (r *FavoriteRepository) ListBySession(ctx context.Context, galleryID, sessi
 }
 
 func (r *FavoriteRepository) ListByGallery(ctx context.Context, galleryID string) ([]*repository.Favorite, error) {
-	// Query using GSI1 (PhotoSessionIndex)
-	// We need to scan all items with galleryId prefix
-	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(r.tableName),
-		KeyConditionExpression: aws.String("begins_with(PK, :pk)"),
+	// Use Scan with filter expression since we need to query across multiple partition keys
+	result, err := r.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(r.tableName),
+		FilterExpression: aws.String("galleryId = :galleryId"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: fmt.Sprintf("GALLERY#%s#SESSION#", galleryID)},
+			":galleryId": &types.AttributeValueMemberS{Value: galleryID},
 		},
 	})
 

@@ -207,13 +207,10 @@ export class StorageStack extends cdk.Stack {
     );
 
     // Add S3 event notification to trigger processing
+    // Trigger on any file created in the originals bucket (all files need processing)
     this.originalBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
-      new s3n.SqsDestination(processingQueue),
-      {
-        prefix: 'galleries/',
-        suffix: '/original.',
-      }
+      new s3n.SqsDestination(processingQueue)
     );
 
     // CloudWatch Alarms

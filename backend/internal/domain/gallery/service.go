@@ -11,17 +11,24 @@ import (
 	"photographer-gallery/backend/pkg/utils"
 )
 
+// StorageService defines the interface for storage operations
+type StorageService interface {
+	DeletePhoto(ctx context.Context, originalKey, optimizedKey, thumbnailKey string) error
+}
+
 // Service handles gallery business logic
 type Service struct {
-	galleryRepo repository.GalleryRepository
-	photoRepo   repository.PhotoRepository
+	galleryRepo    repository.GalleryRepository
+	photoRepo      repository.PhotoRepository
+	storageService StorageService
 }
 
 // NewService creates a new gallery service
-func NewService(galleryRepo repository.GalleryRepository, photoRepo repository.PhotoRepository) *Service {
+func NewService(galleryRepo repository.GalleryRepository, photoRepo repository.PhotoRepository, storageService StorageService) *Service {
 	return &Service{
-		galleryRepo: galleryRepo,
-		photoRepo:   photoRepo,
+		galleryRepo:    galleryRepo,
+		photoRepo:      photoRepo,
+		storageService: storageService,
 	}
 }
 
@@ -170,9 +177,57 @@ func (s *Service) Delete(ctx context.Context, galleryID string) error {
 		return err
 	}
 
-	// TODO: Delete all photos from S3 and DynamoDB
-	// This should be done in a separate service layer
+	// Delete all photos from S3 and DynamoDB
+	// Get all photos for this gallery
+	var allPhotos []*repository.Photo
+	var lastKey map[string]interface{}
+	for {
+		photos, nextKey, err := s.photoRepo.ListByGallery(ctx, galleryID, 100, lastKey)
+		if err != nil {
+			logger.Error("Failed to list photos for deletion", map[string]interface{}{
+				"error":     err.Error(),
+				"galleryId": galleryID,
+			})
+			return errors.Wrap(err, 500, "Failed to list photos for deletion")
+		}
 
+		allPhotos = append(allPhotos, photos...)
+
+		if nextKey == nil {
+			break
+		}
+		lastKey = nextKey
+	}
+
+	// Delete each photo from S3 and DynamoDB
+	for _, photo := range allPhotos {
+		// Delete from S3
+		if s.storageService != nil {
+			if err := s.storageService.DeletePhoto(ctx, photo.OriginalKey, photo.OptimizedKey, photo.ThumbnailKey); err != nil {
+				logger.Error("Failed to delete photo from S3", map[string]interface{}{
+					"error":   err.Error(),
+					"photoId": photo.PhotoID,
+				})
+				// Continue with other photos even if one fails
+			}
+		}
+
+		// Delete from DynamoDB
+		if err := s.photoRepo.Delete(ctx, photo.PhotoID); err != nil {
+			logger.Error("Failed to delete photo from database", map[string]interface{}{
+				"error":   err.Error(),
+				"photoId": photo.PhotoID,
+			})
+			// Continue with other photos even if one fails
+		}
+	}
+
+	logger.Info("Deleted all photos for gallery", map[string]interface{}{
+		"galleryId":  gallery.GalleryID,
+		"photoCount": len(allPhotos),
+	})
+
+	// Delete the gallery from DynamoDB
 	if err := s.galleryRepo.Delete(ctx, galleryID); err != nil {
 		logger.Error("Failed to delete gallery", map[string]interface{}{"error": err.Error()})
 		return errors.Wrap(err, 500, "Failed to delete gallery")

@@ -1,11 +1,24 @@
 import { HttpInterceptorFn } from '@angular/common/http';
-import { inject } from '@angular/core';
-import { AuthService } from '../services/auth.service';
-import { catchError, switchMap, throwError } from 'rxjs';
+import { throwError } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+
+interface AuthTokens {
+  accessToken: string;
+  idToken: string;
+  refreshToken?: string;
+}
+
+function getStoredTokens(): AuthTokens | null {
+  const stored = localStorage.getItem('auth_tokens');
+  return stored ? JSON.parse(stored) : null;
+}
+
+function getIdToken(): string | null {
+  const tokens = getStoredTokens();
+  return tokens?.idToken || null;
+}
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const authService = inject(AuthService);
-
   // Skip auth for Cognito token endpoints
   if (req.url.includes('amazoncognito.com/oauth2/token')) {
     return next(req);
@@ -17,7 +30,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   }
 
   // Add ID token to photographer API requests
-  const idToken = authService.getIdToken();
+  const idToken = getIdToken();
   if (idToken) {
     req = req.clone({
       setHeaders: {
@@ -28,25 +41,10 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(req).pipe(
     catchError(error => {
-      // Handle 401 Unauthorized - try to refresh token
+      // Handle 401 Unauthorized - redirect to login
       if (error.status === 401 && idToken) {
-        return authService.refreshAccessToken().pipe(
-          switchMap(() => {
-            // Retry request with new token
-            const newToken = authService.getIdToken();
-            const retryReq = req.clone({
-              setHeaders: {
-                Authorization: `Bearer ${newToken}`
-              }
-            });
-            return next(retryReq);
-          }),
-          catchError(refreshError => {
-            // Refresh failed, logout user
-            authService.logout();
-            return throwError(() => refreshError);
-          })
-        );
+        localStorage.removeItem('auth_tokens');
+        window.location.href = '/';
       }
 
       return throwError(() => error);

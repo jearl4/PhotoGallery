@@ -92,7 +92,7 @@ interface UploadFile {
 
                   <div class="upload-item-right">
                     @if (uploadFile.status === 'pending') {
-                      <span class="status-text">Waiting...</span>
+                      <span class="status-text">Pending</span>
                       <button
                         class="btn-remove"
                         (click)="removeFile(uploadFile)"
