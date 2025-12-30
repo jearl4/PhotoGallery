@@ -11,6 +11,11 @@ import (
 	"photographer-gallery/backend/pkg/utils"
 )
 
+const (
+	// photoDeletionBatchSize is the number of photos to fetch per batch when deleting a gallery
+	photoDeletionBatchSize = 100
+)
+
 // StorageService defines the interface for storage operations
 type StorageService interface {
 	DeletePhoto(ctx context.Context, originalKey, optimizedKey, thumbnailKey string) error
@@ -178,11 +183,12 @@ func (s *Service) Delete(ctx context.Context, galleryID string) error {
 	}
 
 	// Delete all photos from S3 and DynamoDB
-	// Get all photos for this gallery
+	// Fetch all photos in batches to handle large galleries efficiently
 	var allPhotos []*repository.Photo
 	var lastKey map[string]interface{}
+
 	for {
-		photos, nextKey, err := s.photoRepo.ListByGallery(ctx, galleryID, 100, lastKey)
+		photos, nextKey, err := s.photoRepo.ListByGallery(ctx, galleryID, photoDeletionBatchSize, lastKey)
 		if err != nil {
 			logger.Error("Failed to list photos for deletion", map[string]interface{}{
 				"error":     err.Error(),
@@ -199,11 +205,16 @@ func (s *Service) Delete(ctx context.Context, galleryID string) error {
 		lastKey = nextKey
 	}
 
+	// Track deletion failures for logging
+	var failedS3Deletions int
+	var failedDBDeletions int
+
 	// Delete each photo from S3 and DynamoDB
 	for _, photo := range allPhotos {
-		// Delete from S3
+		// Delete from S3 first (files)
 		if s.storageService != nil {
 			if err := s.storageService.DeletePhoto(ctx, photo.OriginalKey, photo.OptimizedKey, photo.ThumbnailKey); err != nil {
+				failedS3Deletions++
 				logger.Error("Failed to delete photo from S3", map[string]interface{}{
 					"error":   err.Error(),
 					"photoId": photo.PhotoID,
@@ -212,14 +223,25 @@ func (s *Service) Delete(ctx context.Context, galleryID string) error {
 			}
 		}
 
-		// Delete from DynamoDB
+		// Delete from DynamoDB (metadata)
 		if err := s.photoRepo.Delete(ctx, photo.PhotoID); err != nil {
+			failedDBDeletions++
 			logger.Error("Failed to delete photo from database", map[string]interface{}{
 				"error":   err.Error(),
 				"photoId": photo.PhotoID,
 			})
 			// Continue with other photos even if one fails
 		}
+	}
+
+	// Log deletion summary
+	if failedS3Deletions > 0 || failedDBDeletions > 0 {
+		logger.Warn("Gallery deletion completed with some failures", map[string]interface{}{
+			"galleryId":          gallery.GalleryID,
+			"totalPhotos":        len(allPhotos),
+			"failedS3Deletions":  failedS3Deletions,
+			"failedDBDeletions":  failedDBDeletions,
+		})
 	}
 
 	logger.Info("Deleted all photos for gallery", map[string]interface{}{

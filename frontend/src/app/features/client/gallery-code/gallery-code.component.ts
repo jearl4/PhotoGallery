@@ -1,8 +1,12 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
+/**
+ * Gallery Code Entry Component
+ * Allows clients to enter their gallery code to access password-protected galleries
+ */
 @Component({
   selector: 'app-gallery-code',
   standalone: true,
@@ -214,26 +218,47 @@ import { Router } from '@angular/router';
   `]
 })
 export class GalleryCodeComponent implements OnInit {
-  private fb = inject(FormBuilder);
-  private router = inject(Router);
+  private readonly fb = inject(FormBuilder);
+  private readonly router = inject(Router);
+
+  // Gallery code pattern: lowercase letters, numbers, and hyphens only
+  private readonly GALLERY_CODE_PATTERN = /^[a-z0-9-]+$/;
 
   codeForm!: FormGroup;
 
   ngOnInit(): void {
     this.codeForm = this.fb.group({
-      galleryCode: ['', [Validators.required, Validators.pattern(/^[a-z0-9-]+$/)]]
+      galleryCode: ['', [
+        Validators.required,
+        Validators.pattern(this.GALLERY_CODE_PATTERN)
+      ]]
     });
   }
 
+  /**
+   * Handles form submission and navigates to the gallery password page
+   */
   onSubmit(): void {
-    if (this.codeForm.invalid) return;
+    if (this.codeForm.invalid) {
+      return;
+    }
 
-    const galleryCode = this.codeForm.value.galleryCode.trim().toLowerCase();
+    const galleryCode = this.sanitizeGalleryCode(this.codeForm.value.galleryCode);
     this.router.navigate(['/gallery', galleryCode]);
   }
 
+  /**
+   * Shows validation error for the gallery code field
+   */
   showError(): boolean {
     const codeControl = this.codeForm.get('galleryCode');
     return !!(codeControl?.invalid && codeControl?.touched);
+  }
+
+  /**
+   * Sanitizes the gallery code by trimming whitespace and converting to lowercase
+   */
+  private sanitizeGalleryCode(code: string): string {
+    return code.trim().toLowerCase();
   }
 }
