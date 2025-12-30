@@ -4,6 +4,10 @@ import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angula
 import { ActivatedRoute, Router } from '@angular/router';
 import { ClientSessionService } from '../../../core/services/client-session.service';
 
+/**
+ * Gallery Access Component
+ * Password entry page for accessing password-protected galleries
+ */
 @Component({
   selector: 'app-gallery-access',
   standalone: true,
