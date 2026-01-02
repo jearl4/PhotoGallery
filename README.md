@@ -1,33 +1,46 @@
 # Photographer Gallery Application
 
-A modern, cost-optimized photo gallery platform for photographers to share their work with clients through secure, password-protected galleries.
+A modern, cost-optimized photo gallery platform for photographers to share their work with clients through secure, password-protected galleries with optional watermarking.
 
 ## Features
 
 - **Photographer Portal**
-  - Social authentication (Google, Facebook, Apple)
-  - Upload and manage photos
+  - Social authentication (Google, Facebook, Apple via Cognito)
+  - Upload and manage photos with direct S3 uploads
   - Create private client galleries with custom URLs
   - Set gallery expiration dates
-  - View client favorites and analytics
+  - Optional watermarking (custom text and positioning)
+  - Automatic image optimization and thumbnail generation
+  - View client favorites and download analytics
+  - Track gallery access and photo views
 
 - **Client Portal**
   - Password-protected gallery access
-  - View-only photo browsing
-  - Download photos
+  - View-only photo browsing with lightbox
+  - Download original or optimized photos
   - Mark favorite photos
+  - Filter by favorites
   - Responsive, photo-focused design
+
+- **Image Processing**
+  - Automatic thumbnail generation (200x200 with smart cropping)
+  - Optimized versions (max 1920x1080) for web viewing
+  - Optional watermarking with configurable position
+  - EXIF metadata extraction (camera, date, GPS, settings)
+  - SQS-based async processing pipeline
+  - Retry logic with DLQ for failed processing
 
 ## Architecture
 
 ### Tech Stack
-- **Frontend**: Angular 18+ with TypeScript
-- **Backend**: Golang with Lambda functions
+- **Frontend**: Angular 18+ with TypeScript and Signals
+- **Backend**: Golang with Lambda functions (ARM64)
 - **Infrastructure**: AWS CDK (TypeScript)
 - **Database**: DynamoDB with GSIs
-- **Storage**: S3 with Intelligent-Tiering
-- **CDN**: CloudFront with signed URLs
-- **Auth**: Cognito with social providers
+- **Storage**: S3 with Intelligent-Tiering (3 buckets: original, optimized, thumbnail)
+- **CDN**: CloudFront for global photo delivery
+- **Auth**: Cognito with social identity providers
+- **Processing**: SQS + Lambda for async image processing
 
 ### AWS Services
 - **S3**: Three buckets (originals, optimized, thumbnails)
@@ -69,46 +82,52 @@ photographer-gallery/
     └── lib/stacks/        # CloudFormation stacks
 ```
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 - Node.js 18+
 - Go 1.21+
+- Docker Desktop (running)
 - AWS CLI configured
 - AWS CDK CLI (`npm install -g aws-cdk`)
 
-### Backend Development
+### Fast Deployment to AWS
+
 ```bash
-cd backend
-go mod download
-go run cmd/api/main.go
+# Make deploy script executable
+chmod +x deploy.sh
+
+# Deploy everything (infrastructure + backend)
+./deploy.sh
 ```
 
-### Frontend Development
+The script will:
+1. Check prerequisites
+2. Build Go Lambda functions automatically
+3. Deploy all AWS infrastructure
+4. Output configuration values
+
+See [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md) for complete deployment documentation.
+
+### Local Development
+
+**Frontend Development** (local dev server):
 ```bash
 cd frontend
 npm install
-ng serve
+npm start
+# Open http://localhost:4200
 ```
 
-### Infrastructure Deployment
+**Backend Development** (Lambda local testing):
 ```bash
-cd infrastructure
-npm install
-npm run build
+cd backend
+go mod download
 
-# Configure your OAuth providers
-export GOOGLE_CLIENT_ID=your-google-client-id
-export GOOGLE_CLIENT_SECRET=your-google-secret
-export FACEBOOK_APP_ID=your-facebook-app-id
-export FACEBOOK_APP_SECRET=your-facebook-secret
-export APPLE_SERVICES_ID=your-apple-services-id
-export APPLE_TEAM_ID=your-apple-team-id
-export APPLE_KEY_ID=your-apple-key-id
-export APPLE_PRIVATE_KEY=your-apple-private-key
+# Build for Lambda
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-api cmd/api/main.go
 
-# Deploy to AWS
-cdk deploy --all --context stage=dev
+# Test locally with SAM or Lambda emulator
 ```
 
 ## Database Schema
@@ -121,16 +140,16 @@ cdk deploy --all --context stage=dev
 - GSI: EmailIndex
 
 **Galleries**
-- PK: `PHOTOGRAPHER#{userId}`
-- SK: `GALLERY#{galleryId}`
-- GSI1: GalleryIdIndex
-- GSI2: CustomUrlIndex
-- GSI3: StatusExpirationIndex
+- PK: `galleryId`
+- Attributes: name, description, customUrl, password, photoCount, totalSize, enableWatermark, watermarkText, watermarkPosition, expiresAt, status
+- GSI1: PhotographerIndex (photographerId)
+- GSI2: CustomUrlIndex (customUrl)
+- GSI3: StatusExpirationIndex (status, expiresAt)
 
 **Photos**
-- PK: `GALLERY#{galleryId}`
-- SK: `PHOTO#{photoId}`
-- GSI1: PhotoIdIndex
+- PK: `photoId`
+- Attributes: galleryId, fileName, originalKey, optimizedKey, thumbnailKey, width, height, size, metadata (EXIF), processingStatus
+- GSI1: GalleryIndex (galleryId)
 
 **Favorites**
 - PK: `GALLERY#{galleryId}#SESSION#{sessionId}`
@@ -165,18 +184,46 @@ GET    /api/v1/client/photos/{photoId}/download-url # Get download URL
 POST   /api/v1/client/photos/{photoId}/favorite   # Toggle favorite
 ```
 
-## Development Roadmap
+## Development Status
 
-- [x] Phase 1: Project foundation & infrastructure setup
-- [ ] Phase 2: Backend core services (repository, domain logic)
-- [ ] Phase 3: Authentication (Cognito integration)
-- [ ] Phase 4: Gallery management (CRUD operations)
-- [ ] Phase 5: Photo upload & processing pipeline
-- [ ] Phase 6: Photo viewing & downloads
-- [ ] Phase 7: Favorites system
-- [ ] Phase 8: Gallery expiration & lifecycle
-- [ ] Phase 9: Security & optimization
-- [ ] Phase 10: Testing & deployment
+### ✅ Completed Features
+
+- [x] Infrastructure setup with AWS CDK
+- [x] DynamoDB database design and repositories
+- [x] Cognito authentication with social providers
+- [x] Gallery management (create, read, update, delete)
+- [x] Photo upload with presigned S3 URLs
+- [x] Async photo processing pipeline (SQS + Lambda)
+- [x] Automatic thumbnail and optimized image generation
+- [x] EXIF metadata extraction
+- [x] Optional watermarking with custom text and position
+- [x] Photo viewing with lightbox and filters
+- [x] Favorites system for clients
+- [x] Photo download tracking
+- [x] Gallery expiration scheduling
+- [x] CloudFront CDN for global delivery
+- [x] Frontend with Angular 18 (standalone components, signals)
+- [x] Comprehensive test coverage (250+ tests)
+- [x] Deployment automation with `deploy.sh` script
+
+### 🚧 In Progress / Planned
+
+- [ ] Advanced image optimizations (WebP/AVIF support when pure Go libraries available)
+- [ ] Enhanced watermark customization (font selection, size, opacity)
+- [ ] Batch photo operations
+- [ ] Gallery templates and themes
+- [ ] Advanced analytics and reporting
+- [ ] Email notifications for clients
+- [ ] Custom domain support for galleries
+- [ ] Mobile app (React Native)
+
+## Documentation
+
+- [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md) - Complete build and deployment guide
+- [AWS_DEPLOYMENT_QUICK_START.md](AWS_DEPLOYMENT_QUICK_START.md) - Quick AWS deployment
+- [DEPLOY_TO_AWS.md](DEPLOY_TO_AWS.md) - Detailed AWS setup instructions
+- [backend/README.md](backend/README.md) - Backend architecture and API docs
+- [frontend/README.md](frontend/README.md) - Frontend development guide
 
 ## License
 

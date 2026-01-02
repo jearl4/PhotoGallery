@@ -4,10 +4,29 @@ Go-based serverless backend for the photographer gallery application.
 
 ## Architecture
 
-- **Lambda Functions**: Serverless compute using AWS Lambda
-- **DynamoDB**: NoSQL database for all data storage
-- **S3**: Object storage for photos
-- **API Gateway**: REST API endpoint
+### Lambda Functions
+1. **API Handler** (`cmd/api/main.go`) - REST API for photographers and clients
+2. **Processor** (`cmd/processor/main.go`) - Async photo processing (thumbnails, optimization, watermarks, EXIF)
+3. **Scheduler** (`cmd/scheduler/main.go`) - Gallery expiration and cleanup tasks
+
+### AWS Services
+- **Lambda**: Serverless compute (ARM64 for 20% cost savings)
+- **DynamoDB**: NoSQL database for galleries, photos, favorites, sessions
+- **S3**: Three buckets for original, optimized, and thumbnail photos
+- **SQS**: Async processing queue with DLQ for failed processing retries
+- **API Gateway**: REST API endpoint with Cognito authorization
+- **CloudFront**: CDN for global photo delivery
+- **EventBridge**: Scheduled tasks for gallery cleanup
+
+### Key Features
+- ARM64 Lambda architecture for cost optimization
+- Async image processing pipeline with SQS
+- EXIF metadata extraction (camera, date, GPS, settings)
+- Optional watermarking with custom text and positioning
+- Presigned S3 URLs for direct client-side uploads
+- Session-based client authentication (no account required)
+- Photo download and favorite tracking
+- Gallery expiration management with automatic cleanup
 
 ## Project Structure
 
@@ -52,36 +71,94 @@ go mod download
 
 ### Build
 
+**Build all Lambda functions**:
 ```bash
-# Build for local development
-go build -o bin/api cmd/api/main.go
+# Clean previous builds
+rm -rf bin/
+mkdir -p bin
 
-# Build for Lambda (ARM64)
-GOOS=linux GOARCH=arm64 go build -o bootstrap cmd/api/main.go
-zip api-lambda.zip bootstrap
+# Build API Lambda
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-api cmd/api/main.go
+
+# Build Processor Lambda
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-processor cmd/processor/main.go
+
+# Build Scheduler Lambda
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-scheduler cmd/scheduler/main.go
+```
+
+**Note**: CDK automatically zips these binaries during deployment, so manual zipping is not required.
+
+**Quick rebuild script** (`rebuild.sh`):
+```bash
+#!/bin/bash
+set -e
+mkdir -p bin
+echo "Building API Lambda..."
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-api cmd/api/main.go
+echo "Building Processor Lambda..."
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-processor cmd/processor/main.go
+echo "Building Scheduler Lambda..."
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-scheduler cmd/scheduler/main.go
+echo "✅ All Lambda functions built"
 ```
 
 ### Environment Variables
 
+**API Lambda**:
 ```bash
-export AWS_REGION=us-east-1
+export AWS_REGION_NAME=us-east-1
 export DYNAMODB_TABLE_PREFIX=photographer-gallery
 export S3_BUCKET_ORIGINAL=photographer-gallery-originals-dev
 export S3_BUCKET_OPTIMIZED=photographer-gallery-optimized-dev
 export S3_BUCKET_THUMBNAIL=photographer-gallery-thumbnails-dev
 export COGNITO_USER_POOL_ID=us-east-1_xxxxx
 export COGNITO_CLIENT_ID=xxxxx
-export API_STAGE=dev
+export STAGE=dev
+```
+
+**Processor Lambda**:
+```bash
+export AWS_REGION_NAME=us-east-1
+export DYNAMODB_TABLE_PREFIX=photographer-gallery
+export S3_BUCKET_ORIGINAL=photographer-gallery-originals-dev
+export S3_BUCKET_OPTIMIZED=photographer-gallery-optimized-dev
+export S3_BUCKET_THUMBNAIL=photographer-gallery-thumbnails-dev
+export STAGE=dev
+```
+
+**Scheduler Lambda**:
+```bash
+export AWS_REGION_NAME=us-east-1
+export DYNAMODB_TABLE_PREFIX=photographer-gallery
+export STAGE=dev
 ```
 
 ## Deployment
 
-The backend is deployed as Lambda functions using AWS CDK. See the infrastructure directory for deployment scripts.
+The backend is deployed as Lambda functions using AWS CDK.
 
+**Quick deployment**:
 ```bash
-cd ../infrastructure
-npm run deploy
+cd /Users/jt/Code/photographer-gallery
+./deploy.sh
 ```
+
+**Manual deployment**:
+```bash
+# 1. Build Lambda functions
+cd backend
+rm -rf bin/ && mkdir -p bin
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-api cmd/api/main.go
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-processor cmd/processor/main.go
+GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/bootstrap-scheduler cmd/scheduler/main.go
+
+# 2. Deploy infrastructure
+cd ../infrastructure
+npx cdk deploy --all
+```
+
+See [BUILD_AND_DEPLOY.md](../BUILD_AND_DEPLOY.md) for complete deployment documentation.
 
 ## API Endpoints
 

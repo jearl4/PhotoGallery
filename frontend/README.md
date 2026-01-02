@@ -54,23 +54,61 @@ To test the UI locally without authentication:
 
 ### Environment Files
 
-- `src/environments/environment.ts` - Development (default)
-- `src/environments/environment.development.ts` - Local development
-- `src/environments/environment.prod.ts` - Production
+- `src/environments/environment.ts` - Development (used by `npm start`)
+- `src/environments/environment.prod.ts` - Production build (used by `npm run build`)
+
+**Why does `environment.prod.ts` exist if we haven't gone to production?**
+
+Angular's build system requires `environment.prod.ts` to exist when building for production mode:
+```bash
+npm run build  # Uses environment.prod.ts
+```
+
+The `production: true` flag tells Angular to:
+- Enable production optimizations (minification, tree-shaking, AOT compilation)
+- Disable development warnings and debug info
+- Create an optimized bundle
+
+**Current setup**: Both files point to the **dev** backend infrastructure.
+
+**Future production setup**:
+1. Deploy separate production infrastructure: `cdk deploy --all --context stage=prod`
+2. Update `environment.prod.ts` with production URLs
+3. Keep `environment.ts` pointing to dev for local development
 
 ### Required Environment Variables
 
-Update the environment files with your actual values:
+Update both environment files with your AWS deployment outputs:
 
+**For development** (`src/environments/environment.ts`):
 ```typescript
 export const environment = {
   production: false,
-  apiUrl: 'http://localhost:3000/api/v1',  // Your backend API URL
-  cognitoUserPoolId: 'us-east-1_XXXXXXXXX', // AWS Cognito User Pool ID
-  cognitoClientId: 'your-client-id',        // Cognito App Client ID
-  cognitoRegion: 'us-east-1',               // AWS Region
-  cognitoDomain: 'your-domain',             // Cognito Domain (without .auth.region.amazoncognito.com)
+  apiUrl: 'https://YOUR-API-ID.execute-api.us-east-1.amazonaws.com/dev/api/v1',
+  cdnUrl: 'https://YOUR-CLOUDFRONT-ID.cloudfront.net',
+  cognitoUserPoolId: 'us-east-1_XXXXXXXXX',
+  cognitoClientId: 'YOUR-CLIENT-ID',
+  cognitoRegion: 'us-east-1',
+  cognitoDomain: 'YOUR-COGNITO-DOMAIN',
 };
+```
+
+**For production builds** (`src/environments/environment.prod.ts`):
+```typescript
+export const environment = {
+  production: true,  // Enables Angular optimizations
+  apiUrl: 'https://YOUR-API-ID.execute-api.us-east-1.amazonaws.com/dev/api/v1',  // Same as dev for now
+  cdnUrl: 'https://YOUR-CLOUDFRONT-ID.cloudfront.net',
+  cognitoUserPoolId: 'us-east-1_XXXXXXXXX',
+  cognitoClientId: 'YOUR-CLIENT-ID',
+  cognitoRegion: 'us-east-1',
+  cognitoDomain: 'YOUR-COGNITO-DOMAIN',
+};
+```
+
+Get these values from your CDK deployment outputs:
+```bash
+aws cloudformation describe-stacks --stack-name PhotographerGalleryApi-dev --query 'Stacks[0].Outputs'
 ```
 
 ## Full Stack Testing
