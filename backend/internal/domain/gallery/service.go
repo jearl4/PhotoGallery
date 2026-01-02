@@ -39,20 +39,26 @@ func NewService(galleryRepo repository.GalleryRepository, photoRepo repository.P
 
 // CreateGalleryRequest represents the request to create a gallery
 type CreateGalleryRequest struct {
-	PhotographerID string
-	Name           string
-	Description    string
-	CustomURL      string
-	Password       string
-	ExpiresAt      *time.Time
+	PhotographerID    string
+	Name              string
+	Description       string
+	CustomURL         string
+	Password          string
+	ExpiresAt         *time.Time
+	EnableWatermark   bool
+	WatermarkText     string
+	WatermarkPosition string
 }
 
 // UpdateGalleryRequest represents the request to update a gallery
 type UpdateGalleryRequest struct {
-	Name        *string
-	Description *string
-	Password    *string
-	ExpiresAt   *time.Time
+	Name              *string
+	Description       *string
+	Password          *string
+	ExpiresAt         *time.Time
+	EnableWatermark   *bool
+	WatermarkText     *string
+	WatermarkPosition *string
 }
 
 // Create creates a new gallery
@@ -79,18 +85,21 @@ func (s *Service) Create(ctx context.Context, req CreateGalleryRequest) (*reposi
 
 	// Create gallery
 	gallery := &repository.Gallery{
-		GalleryID:      utils.GenerateID("gal"),
-		PhotographerID: req.PhotographerID,
-		Name:           req.Name,
-		Description:    req.Description,
-		CustomURL:      req.CustomURL,
-		Password:       string(hashedPassword),
-		CreatedAt:      time.Now(),
-		ExpiresAt:      req.ExpiresAt,
-		Status:         "active",
-		PhotoCount:     0,
-		TotalSize:      0,
+		GalleryID:         utils.GenerateID("gal"),
+		PhotographerID:    req.PhotographerID,
+		Name:              req.Name,
+		Description:       req.Description,
+		CustomURL:         req.CustomURL,
+		Password:          string(hashedPassword),
+		CreatedAt:         time.Now(),
+		ExpiresAt:         req.ExpiresAt,
+		Status:            "active",
+		PhotoCount:        0,
+		TotalSize:         0,
 		ClientAccessCount: 0,
+		EnableWatermark:   req.EnableWatermark,
+		WatermarkText:     req.WatermarkText,
+		WatermarkPosition: req.WatermarkPosition,
 	}
 
 	if err := s.galleryRepo.Create(ctx, gallery); err != nil {
@@ -163,6 +172,15 @@ func (s *Service) Update(ctx context.Context, galleryID string, req UpdateGaller
 	}
 	if req.ExpiresAt != nil {
 		gallery.ExpiresAt = req.ExpiresAt
+	}
+	if req.EnableWatermark != nil {
+		gallery.EnableWatermark = *req.EnableWatermark
+	}
+	if req.WatermarkText != nil {
+		gallery.WatermarkText = *req.WatermarkText
+	}
+	if req.WatermarkPosition != nil {
+		gallery.WatermarkPosition = *req.WatermarkPosition
 	}
 
 	if err := s.galleryRepo.Update(ctx, gallery); err != nil {

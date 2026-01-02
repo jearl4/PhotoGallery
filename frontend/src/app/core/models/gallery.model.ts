@@ -11,6 +11,9 @@ export interface Gallery {
   photoCount: number;
   totalSize: number;
   clientAccessCount: number;
+  enableWatermark: boolean;
+  watermarkText?: string;
+  watermarkPosition?: 'bottom-right' | 'bottom-left' | 'center';
 }
 
 export interface CreateGalleryRequest {
@@ -19,6 +22,9 @@ export interface CreateGalleryRequest {
   customUrl: string;
   password: string;
   expiresAt?: string;
+  enableWatermark?: boolean;
+  watermarkText?: string;
+  watermarkPosition?: 'bottom-right' | 'bottom-left' | 'center';
 }
 
 export interface UpdateGalleryRequest {
@@ -26,4 +32,7 @@ export interface UpdateGalleryRequest {
   description?: string;
   password?: string;
   expiresAt?: string;
+  enableWatermark?: boolean;
+  watermarkText?: string;
+  watermarkPosition?: 'bottom-right' | 'bottom-left' | 'center';
 }

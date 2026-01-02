@@ -31,6 +31,9 @@ type Gallery struct {
 	PhotoCount        int       `dynamodbav:"photoCount" json:"photoCount"`
 	TotalSize         int64     `dynamodbav:"totalSize" json:"totalSize"`
 	ClientAccessCount int       `dynamodbav:"clientAccessCount" json:"clientAccessCount"`
+	EnableWatermark   bool      `dynamodbav:"enableWatermark" json:"enableWatermark"`
+	WatermarkText     string    `dynamodbav:"watermarkText,omitempty" json:"watermarkText,omitempty"`
+	WatermarkPosition string    `dynamodbav:"watermarkPosition,omitempty" json:"watermarkPosition,omitempty"` // bottom-right, bottom-left, center
 }
 
 // Photo represents a photo in a gallery

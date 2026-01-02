@@ -7,6 +7,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import { DatabaseStack } from './database-stack';
 
@@ -146,6 +147,7 @@ export class StorageStack extends cdk.Stack {
     const deadLetterQueue = new sqs.Queue(this, 'ProcessingDLQ', {
       queueName: `photographer-gallery-processing-dlq-${props.stage}`,
       retentionPeriod: cdk.Duration.days(14),
+      visibilityTimeout: cdk.Duration.seconds(30), // Must be >= Lambda timeout
     });
 
     // Main processing queue
@@ -190,6 +192,7 @@ export class StorageStack extends cdk.Stack {
         S3_BUCKET_THUMBNAIL: this.thumbnailBucket.bucketName,
       },
       reservedConcurrentExecutions: 10,
+      logRetention: logs.RetentionDays.ONE_WEEK, // Keep logs for 7 days
     });
 
     // Grant permissions
@@ -211,6 +214,53 @@ export class StorageStack extends cdk.Stack {
     this.originalBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.SqsDestination(processingQueue)
+    );
+
+    // DLQ Reprocessor Lambda - handles automatic retry with exponential backoff
+    const dlqReprocessorFunction = new lambda.Function(this, 'DLQReprocessorFunction', {
+      runtime: lambda.Runtime.PROVIDED_AL2,
+      handler: 'bootstrap',
+      code: lambda.Code.fromAsset('../backend', {
+        bundling: {
+          image: lambda.Runtime.PROVIDED_AL2.bundlingImage,
+          command: [
+            'bash', '-c', [
+              'yum install -y golang zip',
+              'export GOPATH=/tmp/go',
+              'export GOCACHE=/tmp/go-cache',
+              'cd /asset-input',
+              'GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o /asset-output/bootstrap cmd/dlq-reprocessor/main.go',
+            ].join(' && '),
+          ],
+          user: 'root',
+        },
+      }),
+      architecture: lambda.Architecture.ARM_64,
+      timeout: cdk.Duration.seconds(30), // Must be <= DLQ visibility timeout
+      memorySize: 256, // Minimal memory for lightweight message reprocessing
+      environment: {
+        STAGE: props.stage,
+        AWS_REGION_NAME: this.region,
+        DYNAMODB_TABLE_PREFIX: 'photographer-gallery',
+        S3_BUCKET_ORIGINAL: this.originalBucket.bucketName,
+        S3_BUCKET_OPTIMIZED: this.optimizedBucket.bucketName,
+        S3_BUCKET_THUMBNAIL: this.thumbnailBucket.bucketName,
+        PROCESSING_QUEUE_URL: processingQueue.queueUrl,
+      },
+      reservedConcurrentExecutions: 5,
+      logRetention: logs.RetentionDays.ONE_WEEK, // Keep logs for 7 days
+    });
+
+    // Grant DLQ reprocessor permissions
+    props.databaseStack.photosTable.grantReadWriteData(dlqReprocessorFunction);
+    processingQueue.grantSendMessages(dlqReprocessorFunction);
+
+    // Connect DLQ reprocessor to DLQ
+    dlqReprocessorFunction.addEventSource(
+      new lambdaEventSources.SqsEventSource(deadLetterQueue, {
+        batchSize: 1,
+        reportBatchItemFailures: true,
+      })
     );
 
     // CloudWatch Alarms
@@ -265,6 +315,11 @@ export class StorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DeadLetterQueueUrl', {
       value: deadLetterQueue.queueUrl,
       description: 'Dead letter queue URL',
+    });
+
+    new cdk.CfnOutput(this, 'DLQReprocessorFunctionArn', {
+      value: dlqReprocessorFunction.functionArn,
+      description: 'DLQ Reprocessor Lambda function ARN',
     });
   }
 }
