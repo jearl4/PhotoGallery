@@ -100,6 +100,54 @@ import { Gallery, CreateGalleryRequest, UpdateGalleryRequest } from '../../../co
             </span>
           </div>
 
+          <!-- Watermark Settings -->
+          <div class="form-section">
+            <h3>Watermark Settings</h3>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  formControlName="enableWatermark"
+                  class="checkbox-input">
+                <span>Enable watermark on photos</span>
+              </label>
+              <span class="help-text">
+                Watermarks will be applied to all photos in this gallery
+              </span>
+            </div>
+
+            @if (galleryForm.get('enableWatermark')?.value) {
+              <div class="watermark-options">
+                <div class="form-group">
+                  <label for="watermarkText">Watermark Text</label>
+                  <input
+                    id="watermarkText"
+                    type="text"
+                    formControlName="watermarkText"
+                    placeholder="e.g., © Your Name Photography"
+                    class="form-control"
+                    [class.error]="isFieldInvalid('watermarkText')">
+                  @if (isFieldInvalid('watermarkText')) {
+                    <span class="error-message">Watermark text is required when watermark is enabled</span>
+                  }
+                </div>
+
+                <div class="form-group">
+                  <label for="watermarkPosition">Watermark Position</label>
+                  <select
+                    id="watermarkPosition"
+                    formControlName="watermarkPosition"
+                    class="form-control">
+                    <option value="bottom-right">Bottom Right</option>
+                    <option value="bottom-left">Bottom Left</option>
+                    <option value="center">Center</option>
+                  </select>
+                </div>
+              </div>
+            }
+          </div>
+
           <!-- Form Actions -->
           <div class="form-actions">
             <button
@@ -333,6 +381,48 @@ import { Gallery, CreateGalleryRequest, UpdateGalleryRequest } from '../../../co
       border: 1px solid #fecaca;
     }
 
+    .form-section {
+      padding: 20px;
+      background: #f9fafb;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .form-section h3 {
+      margin: 0 0 16px 0;
+      font-size: 16px;
+      color: #1a1a1a;
+      font-weight: 600;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-weight: normal;
+    }
+
+    .checkbox-input {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .watermark-options {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    select.form-control {
+      cursor: pointer;
+      background-color: white;
+    }
+
     @media (max-width: 640px) {
       .form-container {
         padding: 24px;
@@ -382,7 +472,21 @@ export class GalleryFormComponent implements OnInit {
         Validators.maxLength(100)
       ]],
       password: ['', [Validators.required, Validators.minLength(6)]],
-      expiresAt: ['']
+      expiresAt: [''],
+      enableWatermark: [false],
+      watermarkText: [''],
+      watermarkPosition: ['bottom-right']
+    });
+
+    // Add conditional validation for watermark text
+    this.galleryForm.get('enableWatermark')?.valueChanges.subscribe(enabled => {
+      const watermarkTextControl = this.galleryForm.get('watermarkText');
+      if (enabled) {
+        watermarkTextControl?.setValidators([Validators.required, Validators.minLength(1)]);
+      } else {
+        watermarkTextControl?.clearValidators();
+      }
+      watermarkTextControl?.updateValueAndValidity();
     });
   }
 
@@ -395,7 +499,10 @@ export class GalleryFormComponent implements OnInit {
           name: gallery.name,
           description: gallery.description,
           customUrl: gallery.customUrl,
-          expiresAt: gallery.expiresAt ? this.formatDateForInput(gallery.expiresAt) : ''
+          expiresAt: gallery.expiresAt ? this.formatDateForInput(gallery.expiresAt) : '',
+          enableWatermark: gallery.enableWatermark || false,
+          watermarkText: gallery.watermarkText || '',
+          watermarkPosition: gallery.watermarkPosition || 'bottom-right'
         });
         // Don't populate password on edit
       },
@@ -427,7 +534,10 @@ export class GalleryFormComponent implements OnInit {
       description: formValue.description || undefined,
       customUrl: formValue.customUrl || undefined,
       password: formValue.password,
-      expiresAt: formValue.expiresAt ? new Date(formValue.expiresAt).toISOString() : undefined
+      expiresAt: formValue.expiresAt ? new Date(formValue.expiresAt).toISOString() : undefined,
+      enableWatermark: formValue.enableWatermark || false,
+      watermarkText: formValue.enableWatermark ? formValue.watermarkText : undefined,
+      watermarkPosition: formValue.enableWatermark ? formValue.watermarkPosition : undefined
     };
 
     this.apiService.createGallery(request).subscribe({
@@ -450,7 +560,10 @@ export class GalleryFormComponent implements OnInit {
     const request: UpdateGalleryRequest = {
       name: formValue.name,
       description: formValue.description || undefined,
-      expiresAt: formValue.expiresAt ? new Date(formValue.expiresAt).toISOString() : undefined
+      expiresAt: formValue.expiresAt ? new Date(formValue.expiresAt).toISOString() : undefined,
+      enableWatermark: formValue.enableWatermark || false,
+      watermarkText: formValue.enableWatermark ? formValue.watermarkText : undefined,
+      watermarkPosition: formValue.enableWatermark ? formValue.watermarkPosition : undefined
     };
 
     // Only include password if it was changed

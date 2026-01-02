@@ -24,11 +24,14 @@ func NewGalleryHandler(galleryService *gallery.Service) *GalleryHandler {
 
 // CreateGalleryRequest represents the HTTP request body
 type CreateGalleryRequest struct {
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	CustomURL   string  `json:"customUrl"`
-	Password    string  `json:"password"`
-	ExpiresAt   *string `json:"expiresAt,omitempty"`
+	Name              string  `json:"name"`
+	Description       string  `json:"description"`
+	CustomURL         string  `json:"customUrl"`
+	Password          string  `json:"password"`
+	ExpiresAt         *string `json:"expiresAt,omitempty"`
+	EnableWatermark   bool    `json:"enableWatermark"`
+	WatermarkText     string  `json:"watermarkText,omitempty"`
+	WatermarkPosition string  `json:"watermarkPosition,omitempty"`
 }
 
 // CreateGallery handles POST /galleries
@@ -71,12 +74,15 @@ func (h *GalleryHandler) CreateGallery(w http.ResponseWriter, r *http.Request) {
 
 	// Create gallery
 	g, err := h.galleryService.Create(ctx, gallery.CreateGalleryRequest{
-		PhotographerID: photographerID,
-		Name:           req.Name,
-		Description:    req.Description,
-		CustomURL:      req.CustomURL,
-		Password:       req.Password,
-		ExpiresAt:      expiresAt,
+		PhotographerID:    photographerID,
+		Name:              req.Name,
+		Description:       req.Description,
+		CustomURL:         req.CustomURL,
+		Password:          req.Password,
+		ExpiresAt:         expiresAt,
+		EnableWatermark:   req.EnableWatermark,
+		WatermarkText:     req.WatermarkText,
+		WatermarkPosition: req.WatermarkPosition,
 	})
 
 	if err != nil {
@@ -130,10 +136,13 @@ func (h *GalleryHandler) ListGalleries(w http.ResponseWriter, r *http.Request) {
 
 // UpdateGalleryRequest represents the update request
 type UpdateGalleryRequest struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Password    *string `json:"password,omitempty"`
-	ExpiresAt   *string `json:"expiresAt,omitempty"`
+	Name              *string `json:"name,omitempty"`
+	Description       *string `json:"description,omitempty"`
+	Password          *string `json:"password,omitempty"`
+	ExpiresAt         *string `json:"expiresAt,omitempty"`
+	EnableWatermark   *bool   `json:"enableWatermark,omitempty"`
+	WatermarkText     *string `json:"watermarkText,omitempty"`
+	WatermarkPosition *string `json:"watermarkPosition,omitempty"`
 }
 
 // UpdateGallery handles PUT /galleries/:id
@@ -148,9 +157,12 @@ func (h *GalleryHandler) UpdateGallery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updateReq := gallery.UpdateGalleryRequest{
-		Name:        req.Name,
-		Description: req.Description,
-		Password:    req.Password,
+		Name:              req.Name,
+		Description:       req.Description,
+		Password:          req.Password,
+		EnableWatermark:   req.EnableWatermark,
+		WatermarkText:     req.WatermarkText,
+		WatermarkPosition: req.WatermarkPosition,
 	}
 
 	if req.ExpiresAt != nil {

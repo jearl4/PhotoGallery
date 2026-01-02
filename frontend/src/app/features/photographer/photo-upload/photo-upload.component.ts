@@ -7,9 +7,10 @@ import { ApiService } from '../../../core/services/api.service';
 interface UploadFile {
   file: File;
   progress: number;
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  status: 'pending' | 'uploading' | 'success' | 'error' | 'cancelled';
   errorMessage?: string;
   photoId?: string;
+  xhr?: XMLHttpRequest;
 }
 
 @Component({
@@ -606,8 +607,11 @@ export class PhotoUploadComponent implements OnInit {
       uploadFile.status = 'success';
       uploadFile.progress = 100;
     } catch (error: any) {
-      uploadFile.status = 'error';
-      uploadFile.errorMessage = error.message || 'Upload failed';
+      // Don't overwrite cancelled status (can be set by cancelUpload())
+      if ((uploadFile.status as string) !== 'cancelled') {
+        uploadFile.status = 'error';
+        uploadFile.errorMessage = error.message || 'Upload failed';
+      }
     }
 
     this.files.set([...this.files()]);
@@ -616,6 +620,7 @@ export class PhotoUploadComponent implements OnInit {
   private uploadToS3(uploadFile: UploadFile, url: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      uploadFile.xhr = xhr; // Store XHR for cancellation
 
       xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
@@ -626,14 +631,22 @@ export class PhotoUploadComponent implements OnInit {
 
       xhr.addEventListener('load', () => {
         if (xhr.status === 200) {
+          uploadFile.xhr = undefined; // Clear XHR reference
           resolve();
         } else {
+          uploadFile.xhr = undefined;
           reject(new Error(`Upload failed: ${xhr.statusText}`));
         }
       });
 
       xhr.addEventListener('error', () => {
+        uploadFile.xhr = undefined;
         reject(new Error('Network error during upload'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        uploadFile.xhr = undefined;
+        reject(new Error('Upload cancelled'));
       });
 
       xhr.open('PUT', url);
@@ -643,12 +656,27 @@ export class PhotoUploadComponent implements OnInit {
   }
 
   cancelUpload(): void {
-    // TODO: Implement upload cancellation
+    if (!confirm('Cancel all uploads? Files that are uploading will be stopped.')) {
+      return;
+    }
+
+    // Abort all active XHR requests
+    this.files().forEach(file => {
+      if (file.xhr) {
+        file.xhr.abort();
+      }
+      if (file.status === 'uploading' || file.status === 'pending') {
+        file.status = 'cancelled';
+        file.errorMessage = 'Upload cancelled by user';
+      }
+    });
+
     this.isUploading.set(false);
+    this.files.set([...this.files()]);
   }
 
   completedCount(): number {
-    return this.files().filter(f => f.status === 'success' || f.status === 'error').length;
+    return this.files().filter(f => f.status === 'success' || f.status === 'error' || f.status === 'cancelled').length;
   }
 
   successCount(): number {
@@ -663,7 +691,7 @@ export class PhotoUploadComponent implements OnInit {
 
   allComplete(): boolean {
     return this.files().length > 0 &&
-           this.files().every(f => f.status === 'success' || f.status === 'error');
+           this.files().every(f => f.status === 'success' || f.status === 'error' || f.status === 'cancelled');
   }
 
   formatFileSize(bytes: number): string {

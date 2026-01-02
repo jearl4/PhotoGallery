@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	imageType "image"
 	"io"
 	"log"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/disintegration/imaging"
 
 	"photographer-gallery/backend/internal/repository"
 	dynamodbRepo "photographer-gallery/backend/internal/repository/dynamodb"
@@ -42,6 +44,7 @@ type App struct {
 	cfg           *Config
 	s3Client      S3API
 	photoRepo     repository.PhotoRepository
+	galleryRepo   repository.GalleryRepository
 	processor     *image.Processor
 }
 
@@ -73,15 +76,20 @@ func main() {
 		dynamoClient,
 		fmt.Sprintf("%s-photos-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
 	)
+	galleryRepo := dynamodbRepo.NewGalleryRepository(
+		dynamoClient,
+		fmt.Sprintf("%s-galleries-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
+	)
 
 	// Initialize image processor
 	processor := image.NewProcessor()
 
 	app := &App{
-		cfg:       cfg,
-		s3Client:  s3Client,
-		photoRepo: photoRepo,
-		processor: processor,
+		cfg:         cfg,
+		s3Client:    s3Client,
+		photoRepo:   photoRepo,
+		galleryRepo: galleryRepo,
+		processor:   processor,
 	}
 
 	lambda.Start(app.handleS3Event)
@@ -157,6 +165,19 @@ func (app *App) processPhoto(ctx context.Context, photoID, bucketName, objectKey
 		return fmt.Errorf("failed to get image dimensions: %w", err)
 	}
 
+	// Extract gallery ID from object key to fetch gallery settings
+	galleryID, err := extractGalleryID(objectKey)
+	if err != nil {
+		return fmt.Errorf("failed to extract gallery ID from key %s: %w", objectKey, err)
+	}
+
+	// Fetch gallery settings to check if watermarking is enabled
+	gallery, err := app.galleryRepo.GetByID(ctx, galleryID)
+	if err != nil {
+		log.Printf("Warning: Failed to fetch gallery settings: %v", err)
+		gallery = nil // Continue without watermark
+	}
+
 	// Extract EXIF metadata
 	log.Printf("Extracting EXIF metadata for photo %s", photoID)
 	metadata, err := app.processor.ExtractEXIF(bytes.NewReader(imageData))
@@ -187,9 +208,9 @@ func (app *App) processPhoto(ctx context.Context, photoID, bucketName, objectKey
 		return fmt.Errorf("failed to upload thumbnail: %w", err)
 	}
 
-	// Generate optimized version
+	// Generate optimized version with optional watermark
 	log.Printf("Generating optimized version for photo %s", photoID)
-	optimizedData, err := app.processor.GenerateOptimized(bytes.NewReader(imageData))
+	optimizedData, err := app.generateOptimizedWithWatermark(bytes.NewReader(imageData), gallery)
 	if err != nil {
 		return fmt.Errorf("failed to generate optimized version: %w", err)
 	}
@@ -210,6 +231,9 @@ func (app *App) processPhoto(ctx context.Context, photoID, bucketName, objectKey
 	if err != nil {
 		return fmt.Errorf("failed to get photo from database: %w", err)
 	}
+
+	// Track if this is a new photo for gallery count update
+	isNewPhoto := (photo == nil)
 
 	// If photo doesn't exist, create it
 	if photo == nil {
@@ -302,6 +326,21 @@ func (app *App) processPhoto(ctx context.Context, photoID, bucketName, objectKey
 		return fmt.Errorf("failed to update photo in database: %w", err)
 	}
 
+	// Update gallery photo count (only if this is a new photo)
+	if isNewPhoto {
+		log.Printf("Updating gallery photo count for gallery %s", photo.GalleryID)
+		if err := app.galleryRepo.UpdatePhotoCount(ctx, photo.GalleryID, 1); err != nil {
+			log.Printf("Warning: Failed to update gallery photo count: %v", err)
+			// Don't fail the entire process if photo count update fails
+		}
+
+		// Also update total size
+		log.Printf("Updating gallery total size for gallery %s (adding %d bytes)", photo.GalleryID, photo.Size)
+		if err := app.galleryRepo.UpdateTotalSize(ctx, photo.GalleryID, photo.Size); err != nil {
+			log.Printf("Warning: Failed to update gallery total size: %v", err)
+		}
+	}
+
 	log.Printf("Photo %s processed successfully", photoID)
 	return nil
 }
@@ -354,6 +393,69 @@ func extractPhotoID(objectKey string) (string, error) {
 	}
 
 	return photoID, nil
+}
+
+// extractGalleryID extracts the gallery ID from the S3 object key
+// Expected format: {galleryID}/{photoID}/{filename}
+func extractGalleryID(objectKey string) (string, error) {
+	parts := strings.Split(objectKey, "/")
+	if len(parts) < 3 {
+		return "", fmt.Errorf("invalid object key format: %s", objectKey)
+	}
+
+	// The galleryID is the first part: galleryID/photoID/filename
+	galleryID := parts[0]
+	if !strings.HasPrefix(galleryID, "gal_") {
+		return "", fmt.Errorf("invalid gallery ID format in key: %s", objectKey)
+	}
+
+	return galleryID, nil
+}
+
+// generateOptimizedWithWatermark generates an optimized image with optional watermark
+func (app *App) generateOptimizedWithWatermark(imageData io.Reader, gallery *repository.Gallery) ([]byte, error) {
+	// Decode the image
+	img, format, err := imageType.Decode(imageData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode image: %w", err)
+	}
+
+	log.Printf("Decoded image format: %s", format)
+
+	// Get original dimensions
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Only resize if image is larger than max dimensions
+	var resized imageType.Image
+	if width > image.OptimizedMaxWidth || height > image.OptimizedMaxHeight {
+		resized = imaging.Fit(img, image.OptimizedMaxWidth, image.OptimizedMaxHeight, imaging.Lanczos)
+	} else {
+		resized = img
+	}
+
+	// Apply watermark if enabled for this gallery
+	var final imageType.Image = resized
+	if gallery != nil && gallery.EnableWatermark && gallery.WatermarkText != "" {
+		log.Printf("Applying watermark to image: %s", gallery.WatermarkText)
+		position := gallery.WatermarkPosition
+		if position == "" {
+			position = "bottom-right"
+		}
+		final = app.processor.ApplyWatermark(resized, image.WatermarkOptions{
+			Text:     gallery.WatermarkText,
+			Position: position,
+		})
+	}
+
+	// Encode to JPEG
+	var buf bytes.Buffer
+	if err := imaging.Encode(&buf, final, imaging.JPEG); err != nil {
+		return nil, fmt.Errorf("failed to encode optimized image: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }
 
 // changeExtension changes the file extension of a key

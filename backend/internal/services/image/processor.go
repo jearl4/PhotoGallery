@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"io"
 
 	"github.com/disintegration/imaging"
 	"github.com/rwcarlsen/goexif/exif"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 )
 
 const (
@@ -179,4 +183,89 @@ func (p *Processor) GetImageDimensions(imageData io.Reader) (int, int, error) {
 
 	bounds := img.Bounds()
 	return bounds.Dx(), bounds.Dy(), nil
+}
+
+// WatermarkOptions configures watermark application
+type WatermarkOptions struct {
+	Text     string
+	Position string // "bottom-right", "bottom-left", "center"
+}
+
+// ApplyWatermark adds a text watermark to an image
+func (p *Processor) ApplyWatermark(img image.Image, opts WatermarkOptions) image.Image {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Calculate text position based on watermark position
+	// Note: x,y represent the TOP-LEFT corner of the background box
+	var x, y int
+	textWidth := len(opts.Text) * 7 // Approximate width (basic font is ~7px per char)
+	textHeight := 13                // Basic font height (including ascent and descent)
+
+	margin := 20 // Margin from edges
+
+	switch opts.Position {
+	case "bottom-left":
+		x = margin
+		y = height - margin - textHeight
+	case "center":
+		x = (width - textWidth) / 2
+		y = (height-textHeight)/2 + textHeight/2
+	case "bottom-right":
+		fallthrough
+	default:
+		x = width - textWidth - margin
+		y = height - margin - textHeight
+	}
+
+	// Draw the watermark text with a semi-transparent background for readability
+	return p.drawText(img, opts.Text, x, y)
+}
+
+// drawText draws text on an image with a semi-transparent background
+// x, y represent the TOP-LEFT corner of the background box
+func (p *Processor) drawText(img image.Image, text string, x, y int) image.Image {
+	// Convert image to RGBA for drawing
+	rgba := image.NewRGBA(img.Bounds())
+	for py := 0; py < img.Bounds().Dy(); py++ {
+		for px := 0; px < img.Bounds().Dx(); px++ {
+			rgba.Set(px, py, img.At(px, py))
+		}
+	}
+
+	// Font metrics for basicfont.Face7x13
+	textWidth := len(text) * 7
+	textHeight := 13
+	padding := 5
+
+	// Draw semi-transparent background rectangle
+	// Background starts at (x-padding, y-padding) and extends to text dimensions
+	for py := y - padding; py < y+textHeight+padding; py++ {
+		for px := x - padding; px < x+textWidth+padding; px++ {
+			if px >= 0 && px < rgba.Bounds().Dx() && py >= 0 && py < rgba.Bounds().Dy() {
+				// Semi-transparent black background
+				rgba.Set(px, py, color.RGBA{0, 0, 0, 128})
+			}
+		}
+	}
+
+	// Draw white text
+	// The font drawer's Y coordinate is the baseline, which is about 11 pixels down from the top
+	// of a 13-pixel tall character for basicfont.Face7x13
+	baseline := y + 11 // 11 is the ascent for Face7x13
+	point := fixed.Point26_6{
+		X: fixed.Int26_6(x * 64),
+		Y: fixed.Int26_6(baseline * 64),
+	}
+
+	d := &font.Drawer{
+		Dst:  rgba,
+		Src:  image.NewUniform(color.White),
+		Face: basicfont.Face7x13,
+		Dot:  point,
+	}
+	d.DrawString(text)
+
+	return rgba
 }

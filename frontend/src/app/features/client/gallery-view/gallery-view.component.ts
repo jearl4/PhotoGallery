@@ -58,6 +58,20 @@ import { Photo } from '../../../core/models/photo.model';
               Favorites ({{ favoriteCount() }})
             </button>
           </div>
+
+          @if (viewMode() === 'favorites' && favoriteCount() > 0) {
+            <button
+              class="btn btn-download-bulk"
+              (click)="downloadAllFavorites()"
+              [disabled]="bulkDownloading()">
+              @if (bulkDownloading()) {
+                <span class="spinner"></span>
+                Downloading {{ downloadProgress() }}/{{ favoriteCount() }}...
+              } @else {
+                ⬇ Download All Favorites
+              }
+            </button>
+          }
         </div>
 
         <!-- Photos Grid -->
@@ -107,6 +121,40 @@ import { Photo } from '../../../core/models/photo.model';
               }
             </div>
           }
+        </div>
+      }
+
+      <!-- Photo Viewer Modal -->
+      @if (selectedPhoto()) {
+        <div class="modal-overlay" (click)="closeViewer()">
+          <div class="modal-content" (click)="$event.stopPropagation()">
+            <button class="btn-close" (click)="closeViewer()">✕</button>
+
+            <div class="photo-viewer">
+              <img [src]="getOptimizedUrl(selectedPhoto()!)" [alt]="selectedPhoto()!.fileName">
+            </div>
+
+            <div class="photo-actions">
+              <button
+                class="action-btn"
+                [class.active]="isFavorite(selectedPhoto()!.photoId)"
+                (click)="toggleFavorite(selectedPhoto()!, $event)">
+                {{ isFavorite(selectedPhoto()!.photoId) ? '♥' : '♡' }}
+                {{ isFavorite(selectedPhoto()!.photoId) ? 'Favorited' : 'Favorite' }}
+              </button>
+              <button
+                class="action-btn btn-download"
+                (click)="downloadPhoto(selectedPhoto()!)"
+                [disabled]="downloadingPhoto()">
+                @if (downloadingPhoto()) {
+                  <span class="spinner-small"></span>
+                  Downloading...
+                } @else {
+                  ⬇ Download
+                }
+              </button>
+            </div>
+          </div>
         </div>
       }
     </div>
@@ -213,6 +261,35 @@ import { Photo } from '../../../core/models/photo.model';
       padding: 0 24px;
       display: flex;
       gap: 8px;
+      align-items: center;
+    }
+
+    .btn-download-bulk {
+      margin-left: auto;
+      padding: 10px 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-download-bulk:hover:not(:disabled) {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-download-bulk:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      transform: none;
     }
 
     .filter-btn {
@@ -367,6 +444,148 @@ import { Photo } from '../../../core/models/photo.model';
         gap: 12px;
       }
     }
+
+    /* Photo Viewer Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      max-width: 1200px;
+      width: 100%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 40px;
+      height: 40px;
+      border: none;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border-radius: 50%;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      transition: all 0.2s;
+    }
+
+    .btn-close:hover {
+      background: rgba(0, 0, 0, 0.7);
+      transform: scale(1.1);
+    }
+
+    .photo-viewer {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      min-height: 400px;
+      max-height: 75vh;
+      overflow: hidden;
+    }
+
+    .photo-viewer img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .photo-actions {
+      padding: 24px;
+      background: white;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .action-btn {
+      padding: 12px 24px;
+      border: 2px solid #e5e7eb;
+      background: white;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #666;
+    }
+
+    .action-btn:hover {
+      border-color: #ef4444;
+      color: #ef4444;
+      transform: translateY(-2px);
+    }
+
+    .action-btn.active {
+      border-color: #ef4444;
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-download:hover {
+      border-color: #667eea;
+      color: #667eea;
+    }
+
+    .action-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .spinner-small {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(102, 126, 234, 0.3);
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @media (max-width: 768px) {
+      .modal-content {
+        max-height: 95vh;
+      }
+
+      .photo-viewer {
+        max-height: 70vh;
+      }
+
+      .photo-actions {
+        padding: 16px;
+      }
+
+      .action-btn {
+        flex: 1;
+      }
+    }
   `]
 })
 export class GalleryViewComponent implements OnInit {
@@ -382,6 +601,10 @@ export class GalleryViewComponent implements OnInit {
   viewMode = signal<'all' | 'favorites'>('all');
   isLoading = signal(true);
   loadingPhotos = signal(false);
+  selectedPhoto = signal<Photo | null>(null);
+  downloadingPhoto = signal(false);
+  bulkDownloading = signal(false);
+  downloadProgress = signal(0);
 
   customUrl: string = '';
 
@@ -468,8 +691,11 @@ export class GalleryViewComponent implements OnInit {
   }
 
   viewPhoto(photo: Photo): void {
-    // TODO: Open lightbox
-    console.log('View photo:', photo);
+    this.selectedPhoto.set(photo);
+  }
+
+  closeViewer(): void {
+    this.selectedPhoto.set(null);
   }
 
   logout(): void {
@@ -479,5 +705,85 @@ export class GalleryViewComponent implements OnInit {
 
   getThumbnailUrl(photo: Photo): string {
     return this.photoUrlService.getThumbnailUrl(photo);
+  }
+
+  getOptimizedUrl(photo: Photo): string {
+    return this.photoUrlService.getOptimizedUrl(photo);
+  }
+
+  downloadPhoto(photo: Photo): void {
+    this.downloadingPhoto.set(true);
+
+    this.apiService.getPhotoDownloadUrl(photo.photoId).subscribe({
+      next: (response) => {
+        // Create a temporary anchor element to trigger download
+        const link = document.createElement('a');
+        link.href = response.downloadUrl;
+        link.download = photo.fileName;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        this.downloadingPhoto.set(false);
+      },
+      error: (err) => {
+        console.error('Failed to get download URL:', err);
+        alert('Failed to download photo. Please try again.');
+        this.downloadingPhoto.set(false);
+      }
+    });
+  }
+
+  downloadAllFavorites(): void {
+    const favoritePhotos = this.displayedPhotos();
+
+    if (favoritePhotos.length === 0) {
+      return;
+    }
+
+    if (!confirm(`Download ${favoritePhotos.length} photos? This may take a while.`)) {
+      return;
+    }
+
+    this.bulkDownloading.set(true);
+    this.downloadProgress.set(0);
+
+    // Download photos sequentially with a small delay to avoid rate limits
+    const downloadNext = (index: number) => {
+      if (index >= favoritePhotos.length) {
+        this.bulkDownloading.set(false);
+        this.downloadProgress.set(0);
+        return;
+      }
+
+      const photo = favoritePhotos[index];
+
+      this.apiService.getPhotoDownloadUrl(photo.photoId).subscribe({
+        next: (response) => {
+          // Create a temporary anchor element to trigger download
+          const link = document.createElement('a');
+          link.href = response.downloadUrl;
+          link.download = photo.fileName;
+          link.target = '_blank';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          this.downloadProgress.set(index + 1);
+
+          // Wait 500ms before downloading next photo
+          setTimeout(() => downloadNext(index + 1), 500);
+        },
+        error: (err) => {
+          console.error('Failed to download photo:', photo.fileName, err);
+          // Continue with next photo even if one fails
+          this.downloadProgress.set(index + 1);
+          setTimeout(() => downloadNext(index + 1), 500);
+        }
+      });
+    };
+
+    downloadNext(0);
   }
 }
