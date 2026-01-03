@@ -23,6 +23,7 @@ cdk.out/
 
 # Backend (Go)
 backend/vendor/
+backend/bin/
 backend/*.exe
 backend/*.dll
 backend/*.so
@@ -42,6 +43,7 @@ frontend/.env
 # Infrastructure (CDK)
 infrastructure/node_modules/
 infrastructure/cdk.out/
+infrastructure/bin/
 infrastructure/.env
 
 # IDE
@@ -50,7 +52,6 @@ infrastructure/.env
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Logs
 *.log
@@ -62,4 +63,15 @@ coverage/
 *.coverage
 
 # OS
+.DS_Store
 Thumbs.db
+
+# Package manager
+package-lock.json.backup
+yarn.lock
+pnpm-lock.yaml
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
