@@ -24,6 +24,8 @@ cdk.out/
 # Backend (Go)
 backend/vendor/
 backend/bin/
+backend/cmd/*/bootstrap
+backend/main
 backend/*.exe
 backend/*.dll
 backend/*.so
