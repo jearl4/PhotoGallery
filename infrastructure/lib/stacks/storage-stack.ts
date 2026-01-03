@@ -197,6 +197,7 @@ export class StorageStack extends cdk.Stack {
 
     // Grant permissions
     props.databaseStack.photosTable.grantReadWriteData(processorFunction);
+    props.databaseStack.galleriesTable.grantReadWriteData(processorFunction);
     this.originalBucket.grantRead(processorFunction);
     this.optimizedBucket.grantWrite(processorFunction);
     this.thumbnailBucket.grantWrite(processorFunction);

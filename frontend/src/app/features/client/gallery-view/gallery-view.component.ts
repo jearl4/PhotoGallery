@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ClientSessionService } from '../../../core/services/client-session.service';
@@ -113,8 +113,8 @@ import { Photo } from '../../../core/models/photo.model';
                   </div>
 
                   <div class="photo-info">
-                    @if (photo.favoriteCount > 0) {
-                      <span class="favorite-count">{{ photo.favoriteCount }} ♥</span>
+                    @if (isFavorite(photo.photoId)) {
+                      <span class="favorite-count">1 ♥</span>
                     }
                   </div>
                 </div>
@@ -137,10 +137,10 @@ import { Photo } from '../../../core/models/photo.model';
             <div class="photo-actions">
               <button
                 class="action-btn"
-                [class.active]="isFavorite(selectedPhoto()!.photoId)"
+                [class.active]="isSelectedPhotoFavorited()"
                 (click)="toggleFavorite(selectedPhoto()!, $event)">
-                {{ isFavorite(selectedPhoto()!.photoId) ? '♥' : '♡' }}
-                {{ isFavorite(selectedPhoto()!.photoId) ? 'Favorited' : 'Favorite' }}
+                {{ isSelectedPhotoFavorited() ? '♥' : '♡' }}
+                {{ isSelectedPhotoFavorited() ? 'Favorited' : 'Favorite' }}
               </button>
               <button
                 class="action-btn btn-download"
@@ -606,6 +606,13 @@ export class GalleryViewComponent implements OnInit {
   bulkDownloading = signal(false);
   downloadProgress = signal(0);
 
+  // Computed signal for modal photo favorite state
+  isSelectedPhotoFavorited = computed(() => {
+    const photo = this.selectedPhoto();
+    if (!photo) return false;
+    return this.favorites().has(photo.photoId);
+  });
+
   customUrl: string = '';
 
   ngOnInit(): void {
@@ -655,18 +662,52 @@ export class GalleryViewComponent implements OnInit {
   toggleFavorite(photo: Photo, event: Event): void {
     event.stopPropagation();
 
-    this.apiService.toggleFavorite(photo.photoId).subscribe({
-      next: (response) => {
-        const newFavorites = new Set(this.favorites());
-        if (response.isFavorited) {
-          newFavorites.add(photo.photoId);
-        } else {
-          newFavorites.delete(photo.photoId);
+    const photoId = photo.photoId;
+    const wasAlreadyFavorited = this.favorites().has(photoId);
+
+    // Use update() to ensure change detection triggers properly
+    this.favorites.update(currentFavorites => {
+      const newFavorites = new Set(currentFavorites);
+      if (newFavorites.has(photoId)) {
+        newFavorites.delete(photoId);
+      } else {
+        newFavorites.add(photoId);
+      }
+      return newFavorites;
+    });
+
+    // Sync with server
+    this.apiService.toggleFavorite(photoId).subscribe({
+      next: (response: any) => {
+        // Handle both response formats: {isFavorited: boolean} or {favorited: boolean}
+        const shouldBeFavorited = response.isFavorited ?? response.favorited;
+        const isFavoritedNow = this.favorites().has(photoId);
+
+        if (shouldBeFavorited !== isFavoritedNow) {
+          // Server and client disagree - sync to server state
+          this.favorites.update(current => {
+            const synced = new Set(current);
+            if (shouldBeFavorited) {
+              synced.add(photoId);
+            } else {
+              synced.delete(photoId);
+            }
+            return synced;
+          });
         }
-        this.favorites.set(newFavorites);
       },
       error: (err) => {
         console.error('Failed to toggle favorite:', err);
+        // On error, revert to previous state
+        this.favorites.update(current => {
+          const reverted = new Set(current);
+          if (wasAlreadyFavorited) {
+            reverted.add(photoId);
+          } else {
+            reverted.delete(photoId);
+          }
+          return reverted;
+        });
       }
     });
   }
