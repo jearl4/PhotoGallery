@@ -71,19 +71,23 @@ import { Gallery, CreateGalleryRequest, UpdateGalleryRequest } from '../../../co
 
           <!-- Password -->
           <div class="form-group">
-            <label for="password">Gallery Password *</label>
+            <label for="password">Gallery Password @if (!isEditMode()) {*}</label>
             <input
               id="password"
               type="password"
               formControlName="password"
-              placeholder="Enter password for client access"
+              [placeholder]="isEditMode() ? 'Leave blank to keep current password' : 'Enter password for client access'"
               class="form-control"
               [class.error]="isFieldInvalid('password')">
             @if (isFieldInvalid('password')) {
               <span class="error-message">Password is required (min 6 characters)</span>
             }
             <span class="help-text">
-              Clients will need this password to access the gallery
+              @if (isEditMode()) {
+                Leave blank to keep the current password, or enter a new password (min 6 characters)
+              } @else {
+                Clients will need this password to access the gallery
+              }
             </span>
           </div>
 
@@ -471,7 +475,7 @@ export class GalleryFormComponent implements OnInit {
         Validators.minLength(3),
         Validators.maxLength(100)
       ]],
-      password: ['', [Validators.required, Validators.minLength(6)]],
+      password: ['', this.isEditMode() ? [] : [Validators.required, Validators.minLength(6)]],
       expiresAt: [''],
       enableWatermark: [false],
       watermarkText: [''],
@@ -500,9 +504,9 @@ export class GalleryFormComponent implements OnInit {
           description: gallery.description,
           customUrl: gallery.customUrl,
           expiresAt: gallery.expiresAt ? this.formatDateForInput(gallery.expiresAt) : '',
-          enableWatermark: gallery.enableWatermark || false,
-          watermarkText: gallery.watermarkText || '',
-          watermarkPosition: gallery.watermarkPosition || 'bottom-right'
+          enableWatermark: gallery.enableWatermark === true || gallery.enableWatermark === false ? gallery.enableWatermark : false,
+          watermarkText: gallery.watermarkText ?? '',
+          watermarkPosition: gallery.watermarkPosition ?? 'bottom-right'
         });
         // Don't populate password on edit
       },

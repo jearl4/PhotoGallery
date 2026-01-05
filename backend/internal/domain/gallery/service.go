@@ -359,3 +359,11 @@ func (s *Service) ProcessExpiredGalleries(ctx context.Context, limit int) error 
 
 	return nil
 }
+
+// Helper function to convert string to *string
+func stringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

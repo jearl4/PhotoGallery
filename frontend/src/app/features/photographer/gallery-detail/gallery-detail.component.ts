@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
@@ -45,7 +45,7 @@ import { Photo } from '../../../core/models/photo.model';
                 <div class="gallery-meta">
                   <div class="meta-item">
                     <span class="meta-icon">📷</span>
-                    <span>{{ gallery()!.photoCount }} photos</span>
+                    <span>{{ photos().length }} photos</span>
                   </div>
                   <div class="meta-item">
                     <span class="meta-icon">👁</span>
@@ -119,7 +119,7 @@ import { Photo } from '../../../core/models/photo.model';
           <div class="section-header">
             <h2>Photos</h2>
             @if (photos().length > 0) {
-              <span class="photo-count">{{ photos().length }} of {{ gallery()!.photoCount }}</span>
+              <span class="photo-count">{{ photos().length }} photos</span>
             }
           </div>
 
@@ -173,18 +173,22 @@ import { Photo } from '../../../core/models/photo.model';
         </div>
 
         <!-- Favorites Section -->
-        @if (favorites().length > 0) {
+        @if (favoritePhotos().length > 0) {
           <div class="favorites-section">
             <div class="section-header">
               <h2>Client Favorites</h2>
-              <span class="photo-count">{{ favorites().length }} photos</span>
+              <span class="photo-count">{{ favoritePhotos().length }} photos</span>
             </div>
 
             <div class="favorites-grid">
-              @for (favorite of favorites(); track favorite.photoId) {
+              @for (favorite of favoritePhotos(); track favorite.photoId) {
                 <div class="favorite-card">
+                  <img
+                    [src]="getThumbnailUrl(favorite.photo!)"
+                    [alt]="favorite.photo!.fileName"
+                    class="favorite-thumbnail">
                   <div class="favorite-info">
-                    <div>Photo {{ favorite.photoId.substring(0, 8) }}</div>
+                    <div class="favorite-filename">{{ favorite.photo!.fileName }}</div>
                     <div class="favorite-date">
                       {{ formatDate(favorite.favoritedAt) }}
                     </div>
@@ -634,14 +638,29 @@ import { Photo } from '../../../core/models/photo.model';
 
     .favorite-card {
       background: white;
-      padding: 16px;
       border-radius: 8px;
       border: 1px solid #e5e7eb;
+      overflow: hidden;
+    }
+
+    .favorite-thumbnail {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      display: block;
     }
 
     .favorite-info {
+      padding: 12px;
+    }
+
+    .favorite-filename {
       font-size: 13px;
-      color: #666;
+      color: #374151;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .favorite-date {
@@ -793,6 +812,20 @@ export class GalleryDetailComponent implements OnInit {
   error = signal<string | null>(null);
   selectedPhoto = signal<Photo | null>(null);
 
+  // Computed signal to join favorites with photo data
+  favoritePhotos = computed(() => {
+    const favs = this.favorites();
+    const allPhotos = this.photos();
+
+    return favs.map(fav => {
+      const photo = allPhotos.find(p => p.photoId === fav.photoId);
+      return {
+        ...fav,
+        photo: photo
+      };
+    }).filter(fav => fav.photo); // Only include favorites where we found the photo
+  });
+
   galleryId!: string;
 
   ngOnInit(): void {
@@ -859,8 +892,9 @@ export class GalleryDetailComponent implements OnInit {
     const gallery = this.gallery();
     if (!gallery) return;
 
-    const confirmMessage = gallery.photoCount > 0
-      ? `Are you sure you want to delete "${gallery.name}"? This will permanently delete the gallery and all ${gallery.photoCount} photos. This action cannot be undone.`
+    const photoCount = this.photos().length;
+    const confirmMessage = photoCount > 0
+      ? `Are you sure you want to delete "${gallery.name}"? This will permanently delete the gallery and all ${photoCount} photo${photoCount === 1 ? '' : 's'}. This action cannot be undone.`
       : `Are you sure you want to delete "${gallery.name}"? This action cannot be undone.`;
 
     if (confirm(confirmMessage)) {
