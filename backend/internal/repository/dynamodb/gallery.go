@@ -3,6 +3,7 @@ package dynamodb
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -39,6 +40,9 @@ type galleryItem struct {
 	PhotoCount        int        `dynamodbav:"photoCount"`
 	TotalSize         int64      `dynamodbav:"totalSize"`
 	ClientAccessCount int        `dynamodbav:"clientAccessCount"`
+	EnableWatermark   bool       `dynamodbav:"enableWatermark"`
+	WatermarkText     string     `dynamodbav:"watermarkText,omitempty"`
+	WatermarkPosition string     `dynamodbav:"watermarkPosition,omitempty"`
 }
 
 func (r *GalleryRepository) Create(ctx context.Context, gallery *repository.Gallery) error {
@@ -56,6 +60,9 @@ func (r *GalleryRepository) Create(ctx context.Context, gallery *repository.Gall
 		PhotoCount:        gallery.PhotoCount,
 		TotalSize:         gallery.TotalSize,
 		ClientAccessCount: gallery.ClientAccessCount,
+		EnableWatermark:   gallery.EnableWatermark,
+		WatermarkText:     gallery.WatermarkText,
+		WatermarkPosition: gallery.WatermarkPosition,
 	}
 
 	if gallery.ExpiresAt != nil {
@@ -191,6 +198,9 @@ func (r *GalleryRepository) Update(ctx context.Context, gallery *repository.Gall
 		PhotoCount:        gallery.PhotoCount,
 		TotalSize:         gallery.TotalSize,
 		ClientAccessCount: gallery.ClientAccessCount,
+		EnableWatermark:   gallery.EnableWatermark,
+		WatermarkText:     gallery.WatermarkText,
+		WatermarkPosition: gallery.WatermarkPosition,
 	}
 
 	if gallery.ExpiresAt != nil {
@@ -350,11 +360,34 @@ func itemToGallery(item *galleryItem) *repository.Gallery {
 		PhotoCount:        item.PhotoCount,
 		TotalSize:         item.TotalSize,
 		ClientAccessCount: item.ClientAccessCount,
+		EnableWatermark:   item.EnableWatermark,
+		WatermarkText:     item.WatermarkText,
+		WatermarkPosition: item.WatermarkPosition,
 	}
 
 	// Parse CreatedAt
-	// Simple parsing - in production use proper time parsing
-	// gallery.CreatedAt = time.Parse(...)
+	if item.CreatedAt != "" {
+		if t, err := parseTime(item.CreatedAt); err == nil {
+			gallery.CreatedAt = t
+		}
+	}
+
+	// Parse ExpiresAt
+	if item.ExpiresAt != nil && *item.ExpiresAt != "" {
+		if t, err := parseTime(*item.ExpiresAt); err == nil {
+			gallery.ExpiresAt = &t
+		}
+	}
 
 	return gallery
+}
+
+func parseTime(timeStr string) (time.Time, error) {
+	// Try ISO 8601 format first
+	t, err := time.Parse("2006-01-02T15:04:05Z07:00", timeStr)
+	if err == nil {
+		return t, nil
+	}
+	// Fallback to RFC3339
+	return time.Parse(time.RFC3339, timeStr)
 }
