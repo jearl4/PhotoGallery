@@ -2,6 +2,7 @@ package gallery
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -337,24 +338,47 @@ func (s *Service) SetExpiration(ctx context.Context, galleryID string, expiresAt
 }
 
 // ProcessExpiredGalleries processes galleries that have expired
+// deleteExpired parameter determines whether to delete or just mark as expired
 func (s *Service) ProcessExpiredGalleries(ctx context.Context, limit int) error {
 	galleries, err := s.galleryRepo.ListExpired(ctx, limit)
 	if err != nil {
 		return errors.Wrap(err, 500, "Failed to list expired galleries")
 	}
 
+	logger.Info("Processing expired galleries", map[string]interface{}{
+		"count": len(galleries),
+	})
+
+	successCount := 0
+	errorCount := 0
+
 	for _, gallery := range galleries {
-		gallery.Status = "expired"
-		if err := s.galleryRepo.Update(ctx, gallery); err != nil {
-			logger.Error("Failed to update expired gallery", map[string]interface{}{
+		// Delete the gallery and all its photos
+		if err := s.Delete(ctx, gallery.GalleryID); err != nil {
+			logger.Error("Failed to delete expired gallery", map[string]interface{}{
 				"galleryId": gallery.GalleryID,
 				"error":     err.Error(),
 			})
+			errorCount++
 			continue
 		}
-		logger.Info("Gallery marked as expired", map[string]interface{}{
+
+		successCount++
+		logger.Info("Deleted expired gallery", map[string]interface{}{
 			"galleryId": gallery.GalleryID,
+			"name":      gallery.Name,
+			"expiresAt": gallery.ExpiresAt,
 		})
+	}
+
+	logger.Info("Finished processing expired galleries", map[string]interface{}{
+		"total":        len(galleries),
+		"successCount": successCount,
+		"errorCount":   errorCount,
+	})
+
+	if errorCount > 0 {
+		return fmt.Errorf("completed with %d errors out of %d galleries", errorCount, len(galleries))
 	}
 
 	return nil

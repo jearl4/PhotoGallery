@@ -244,7 +244,7 @@ func (r *GalleryRepository) Delete(ctx context.Context, galleryID string) error 
 
 func (r *GalleryRepository) ListExpired(ctx context.Context, limit int) ([]*repository.Gallery, error) {
 	// Query using GSI3 (StatusExpirationIndex) for active galleries with expiresAt < now
-	now := fmt.Sprintf("%d", 0) // Placeholder - would use actual timestamp
+	now := time.Now().Format("2006-01-02T15:04:05Z07:00")
 
 	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),

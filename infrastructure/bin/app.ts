@@ -5,6 +5,7 @@ import { DatabaseStack } from '../lib/stacks/database-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { AuthStack } from '../lib/stacks/auth-stack';
 import { ApiStack } from '../lib/stacks/api-stack';
+import { SchedulerStack } from '../lib/stacks/scheduler-stack';
 
 const app = new cdk.App();
 
@@ -41,6 +42,14 @@ const apiStack = new ApiStack(app, `PhotographerGalleryApi-${stage}`, {
   databaseStack,
   storageStack,
   authStack,
+});
+
+// Scheduler Stack (for daily cleanup of expired galleries)
+const schedulerStack = new SchedulerStack(app, `PhotographerGalleryScheduler-${stage}`, {
+  env,
+  stage,
+  databaseStack,
+  storageStack,
 });
 
 // Add tags to all resources
