@@ -1,0 +1,181 @@
+<div class="form-page">
+  <div class="form-container">
+    <div class="form-header">
+      <button class="btn-back" (click)="goBack()">
+        ← Back
+      </button>
+      <h1>{{ isEditMode() ? 'Edit Gallery' : 'Create Gallery' }}</h1>
+    </div>
+
+    <form [formGroup]="galleryForm" (ngSubmit)="onSubmit()" class="form">
+      <!-- Gallery Name -->
+      <div class="form-group">
+        <label for="name">Gallery Name *</label>
+        <input
+          id="name"
+          type="text"
+          formControlName="name"
+          placeholder="e.g., John & Jane Wedding"
+          class="form-control"
+          [class.error]="isFieldInvalid('name')">
+        @if (isFieldInvalid('name')) {
+          <span class="error-message">Gallery name is required</span>
+        }
+      </div>
+
+      <!-- Description -->
+      <div class="form-group">
+        <label for="description">Description</label>
+        <textarea
+          id="description"
+          formControlName="description"
+          placeholder="Add details about this gallery..."
+          rows="3"
+          class="form-control"></textarea>
+      </div>
+
+      <!-- Custom URL -->
+      <div class="form-group">
+        <label for="customUrl">Custom URL</label>
+        <div class="url-input-group">
+          <span class="url-prefix">{{ urlPrefix }}/</span>
+          <input
+            id="customUrl"
+            type="text"
+            formControlName="customUrl"
+            placeholder="auto-generated"
+            class="form-control url-input"
+            [class.error]="isFieldInvalid('customUrl')">
+        </div>
+        @if (isFieldInvalid('customUrl')) {
+          <span class="error-message">
+            URL must be 3-100 characters, lowercase letters, numbers, and hyphens only
+          </span>
+        }
+        <span class="help-text">
+          Leave blank for auto-generated URL. Use only lowercase letters, numbers, and hyphens.
+        </span>
+      </div>
+
+      <!-- Password -->
+      <div class="form-group">
+        <label for="password">Gallery Password @if (!isEditMode()) {*}</label>
+        <input
+          id="password"
+          type="password"
+          formControlName="password"
+          [placeholder]="isEditMode() ? 'Leave blank to keep current password' : 'Enter password for client access'"
+          class="form-control"
+          [class.error]="isFieldInvalid('password')">
+        @if (isFieldInvalid('password')) {
+          <span class="error-message">Password is required (min 6 characters)</span>
+        }
+        <span class="help-text">
+          @if (isEditMode()) {
+            Leave blank to keep the current password, or enter a new password (min 6 characters)
+          } @else {
+            Clients will need this password to access the gallery
+          }
+        </span>
+      </div>
+
+      <!-- Expiration Date -->
+      <div class="form-group">
+        <label for="expiresAt">
+          Expiration Date (Optional)
+          <span class="tooltip-wrapper">
+            <span class="tooltip-icon">ⓘ</span>
+            <div class="tooltip-popup">
+              <div class="tooltip-content">
+                Gallery will be automatically deleted after this date ends.
+              </div>
+            </div>
+          </span>
+        </label>
+        <input
+          id="expiresAt"
+          type="date"
+          formControlName="expiresAt"
+          class="form-control"
+          [min]="getMinDate()">
+      </div>
+
+      <!-- Watermark Settings -->
+      <div class="form-section">
+        <h3>Watermark Settings</h3>
+
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              formControlName="enableWatermark"
+              class="checkbox-input">
+            <span>Enable watermark on photos</span>
+          </label>
+          <span class="help-text">
+            Watermarks will be applied to all photos in this gallery
+          </span>
+        </div>
+
+        @if (galleryForm.get('enableWatermark')?.value) {
+          <div class="watermark-options">
+            <div class="form-group">
+              <label for="watermarkText">Watermark Text</label>
+              <input
+                id="watermarkText"
+                type="text"
+                formControlName="watermarkText"
+                placeholder="e.g., © Your Name Photography"
+                class="form-control"
+                [class.error]="isFieldInvalid('watermarkText')">
+              @if (isFieldInvalid('watermarkText')) {
+                <span class="error-message">Watermark text is required when watermark is enabled</span>
+              }
+            </div>
+
+            <div class="form-group">
+              <label for="watermarkPosition">Watermark Position</label>
+              <select
+                id="watermarkPosition"
+                formControlName="watermarkPosition"
+                class="form-control">
+                <option value="bottom-right">Bottom Right</option>
+                <option value="bottom-left">Bottom Left</option>
+                <option value="center">Center</option>
+              </select>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- Form Actions -->
+      <div class="form-actions">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          (click)="goBack()"
+          [disabled]="isSubmitting()">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [disabled]="!galleryForm.valid || isSubmitting()">
+          @if (isSubmitting()) {
+            <span class="spinner-small"></span>
+            Saving...
+          } @else {
+            {{ isEditMode() ? 'Update Gallery' : 'Create Gallery' }}
+          }
+        </button>
+      </div>
+
+      <!-- Error Message -->
+      @if (errorMessage()) {
+        <div class="alert alert-error">
+          {{ errorMessage() }}
+        </div>
+      }
+    </form>
+  </div>
+</div>
