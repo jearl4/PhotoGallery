@@ -1,0 +1,224 @@
+<div class="gallery-detail">
+  @if (isLoading()) {
+    <div class="loading-container">
+      <div class="spinner"></div>
+      <p>Loading gallery...</p>
+    </div>
+  } @else if (error()) {
+    <div class="error-container">
+      <div class="error-icon">⚠️</div>
+      <h2>Failed to Load Gallery</h2>
+      <p>{{ error() }}</p>
+      <div class="error-actions">
+        <button class="btn btn-primary" (click)="loadGallery()">Try Again</button>
+        <button class="btn btn-secondary" (click)="goBack()">Back to Dashboard</button>
+      </div>
+    </div>
+  } @else if (gallery()) {
+    <!-- Header -->
+    <div class="header">
+      <div class="header-content">
+        <button class="btn-back" (click)="goBack()">
+          ← Back to Dashboard
+        </button>
+
+        <div class="header-info">
+          <div class="header-left">
+            <h1>{{ gallery()!.name }}</h1>
+            @if (gallery()!.description) {
+              <p class="description">{{ gallery()!.description }}</p>
+            }
+
+            <div class="gallery-meta">
+              <div class="meta-item">
+                <span class="meta-icon">📷</span>
+                <span>{{ photos().length }} photos</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-icon">👁</span>
+                <span>{{ gallery()!.clientAccessCount }} views</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-icon">⭐</span>
+                <span>{{ favoriteCount() }} favorites</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="header-actions">
+            <button class="btn btn-danger" (click)="deleteGallery()">
+              Delete Gallery
+            </button>
+            <button class="btn btn-secondary" (click)="editGallery()">
+              Edit Gallery
+            </button>
+            <button class="btn btn-primary" (click)="uploadPhotos()">
+              <span class="btn-icon">+</span>
+              Upload Photos
+            </button>
+          </div>
+        </div>
+
+        <!-- Gallery URL and Status -->
+        <div class="gallery-info-cards">
+          <div class="info-card">
+            <div class="info-label">Gallery URL</div>
+            <div class="info-value url-value">
+              <code>{{ getGalleryUrl() }}</code>
+              <button class="btn-copy" (click)="copyUrl()" [title]="'Copy URL'">
+                {{ urlCopied() ? '✓' : '📋' }}
+              </button>
+            </div>
+          </div>
+
+          @if (gallery()!.password) {
+            <div class="info-card">
+              <div class="info-label">Password</div>
+              <div class="info-value">
+                <code>{{ showPassword() ? gallery()!.password : '••••••••' }}</code>
+                <button class="btn-copy" (click)="togglePassword()" [title]="showPassword() ? 'Hide password' : 'Show password'">
+                  {{ showPassword() ? '🙈' : '👁' }}
+                </button>
+              </div>
+            </div>
+          }
+
+          <div class="info-card">
+            <div class="info-label">Status</div>
+            <div class="info-value">
+              @if (isExpired()) {
+                <span class="status-badge status-expired">Expired</span>
+              } @else if (gallery()!.expiresAt) {
+                <span class="status-badge status-expires">
+                  Expires {{ formatDate(gallery()!.expiresAt) }}
+                </span>
+              } @else {
+                <span class="status-badge status-active">Active</span>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Photos Grid -->
+    <div class="photos-section">
+      <div class="section-header">
+        <h2>Photos</h2>
+        @if (photos().length > 0) {
+          <span class="photo-count">{{ photos().length }} photos</span>
+        }
+      </div>
+
+      @if (loadingPhotos()) {
+        <div class="loading-photos">
+          <div class="spinner"></div>
+          <p>Loading photos...</p>
+        </div>
+      } @else if (photos().length === 0) {
+        <div class="empty-photos">
+          <div class="empty-icon">📷</div>
+          <h3>No photos yet</h3>
+          <p>Upload photos to share with your client</p>
+          <button class="btn btn-primary" (click)="uploadPhotos()">
+            <span class="btn-icon">+</span>
+            Upload Photos
+          </button>
+        </div>
+      } @else {
+        <div class="photos-grid">
+          @for (photo of photos(); track photo.photoId) {
+            <div class="photo-card">
+              <div class="photo-thumbnail">
+                <img
+                  [src]="getThumbnailUrl(photo)"
+                  [alt]="photo.fileName"
+                  loading="lazy">
+
+                <div class="photo-overlay">
+                  <button class="btn-icon-overlay" (click)="viewPhoto(photo)" title="View">
+                    👁
+                  </button>
+                  <button class="btn-icon-overlay" (click)="deletePhoto(photo)" title="Delete">
+                    🗑
+                  </button>
+                </div>
+              </div>
+
+              <div class="photo-info">
+                <div class="photo-name">{{ photo.fileName }}</div>
+                <div class="photo-stats">
+                  <span>{{ formatFileSize(photo.size) }}</span>
+                  <span>•</span>
+                  <span>{{ photo.favoriteCount }} ♥</span>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Favorites Section -->
+    @if (favoritePhotos().length > 0) {
+      <div class="favorites-section">
+        <div class="section-header">
+          <h2>Client Favorites</h2>
+          <span class="photo-count">{{ favoritePhotos().length }} photos</span>
+        </div>
+
+        <div class="favorites-grid">
+          @for (favorite of favoritePhotos(); track favorite.photoId) {
+            <div class="favorite-card">
+              <img
+                [src]="getThumbnailUrl(favorite.photo!)"
+                [alt]="favorite.photo!.fileName"
+                class="favorite-thumbnail">
+              <div class="favorite-info">
+                <div class="favorite-filename">{{ favorite.photo!.fileName }}</div>
+                <div class="favorite-date">
+                  {{ formatDate(favorite.favoritedAt) }}
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+  }
+
+  <!-- Photo Viewer Modal -->
+  @if (selectedPhoto()) {
+    <div class="modal-overlay" (click)="closeViewer()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <button class="btn-close" (click)="closeViewer()">✕</button>
+
+        <div class="photo-viewer">
+          <img [src]="getOptimizedUrl(selectedPhoto()!)" [alt]="selectedPhoto()!.fileName">
+        </div>
+
+        <div class="photo-details">
+          <h3>{{ selectedPhoto()!.fileName }}</h3>
+          <div class="details-grid">
+            <div class="detail-item">
+              <span class="detail-label">Size:</span>
+              <span>{{ formatFileSize(selectedPhoto()!.size) }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Dimensions:</span>
+              <span>{{ selectedPhoto()!.width }} × {{ selectedPhoto()!.height }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Format:</span>
+              <span>{{ selectedPhoto()!.mimeType }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Favorites:</span>
+              <span>{{ selectedPhoto()!.favoriteCount }} ♥</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>
