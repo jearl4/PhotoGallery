@@ -442,7 +442,13 @@ export class DashboardComponent implements OnInit {
   formatDate(dateString: string): string {
     const date = new Date(dateString);
     const now = new Date();
-    const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Reset both dates to start of day for accurate day comparison
+    const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const diffMs = dateDay.getTime() - nowDay.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
     if (diffDays < 0) return 'expired';
     if (diffDays === 0) return 'today';

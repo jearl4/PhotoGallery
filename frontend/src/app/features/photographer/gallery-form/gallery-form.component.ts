@@ -93,15 +93,23 @@ import { Gallery, CreateGalleryRequest, UpdateGalleryRequest } from '../../../co
 
           <!-- Expiration Date -->
           <div class="form-group">
-            <label for="expiresAt">Expiration Date (Optional)</label>
+            <label for="expiresAt">
+              Expiration Date (Optional)
+              <span class="tooltip-wrapper">
+                <span class="tooltip-icon">ⓘ</span>
+                <div class="tooltip-popup">
+                  <div class="tooltip-content">
+                    Gallery will be automatically deleted after this date ends.
+                  </div>
+                </div>
+              </span>
+            </label>
             <input
               id="expiresAt"
-              type="datetime-local"
+              type="date"
               formControlName="expiresAt"
-              class="form-control">
-            <span class="help-text">
-              Gallery will automatically expire on this date
-            </span>
+              class="form-control"
+              [min]="getMinDate()">
           </div>
 
           <!-- Watermark Settings -->
@@ -243,6 +251,73 @@ import { Gallery, CreateGalleryRequest, UpdateGalleryRequest } from '../../../co
       font-size: 14px;
       font-weight: 600;
       color: #1a1a1a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tooltip-wrapper {
+      position: relative;
+      display: inline-flex;
+    }
+
+    .tooltip-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      font-size: 12px;
+      color: #667eea;
+      cursor: help;
+      font-weight: normal;
+    }
+
+    .tooltip-icon:hover {
+      color: #5568d3;
+    }
+
+    .tooltip-popup {
+      position: absolute;
+      top: -80px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      width: 280px;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      pointer-events: none;
+    }
+
+    .tooltip-wrapper:hover .tooltip-popup {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .tooltip-content {
+      background: #1f2937;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      position: relative;
+      font-weight: normal;
+    }
+
+    .tooltip-content::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 6px solid #1f2937;
     }
 
     .form-control {
@@ -538,7 +613,7 @@ export class GalleryFormComponent implements OnInit {
       description: formValue.description || undefined,
       customUrl: formValue.customUrl || undefined,
       password: formValue.password,
-      expiresAt: formValue.expiresAt ? new Date(formValue.expiresAt).toISOString() : undefined,
+      expiresAt: formValue.expiresAt ? this.formatDateToISO(formValue.expiresAt) : undefined,
       enableWatermark: formValue.enableWatermark || false,
       watermarkText: formValue.enableWatermark ? formValue.watermarkText : undefined,
       watermarkPosition: formValue.enableWatermark ? formValue.watermarkPosition : undefined
@@ -564,7 +639,7 @@ export class GalleryFormComponent implements OnInit {
     const request: UpdateGalleryRequest = {
       name: formValue.name,
       description: formValue.description || undefined,
-      expiresAt: formValue.expiresAt ? new Date(formValue.expiresAt).toISOString() : undefined,
+      expiresAt: formValue.expiresAt ? this.formatDateToISO(formValue.expiresAt) : undefined,
       enableWatermark: formValue.enableWatermark || false,
       watermarkText: formValue.enableWatermark ? formValue.watermarkText : undefined,
       watermarkPosition: formValue.enableWatermark ? formValue.watermarkPosition : undefined
@@ -603,7 +678,21 @@ export class GalleryFormComponent implements OnInit {
   }
 
   private formatDateForInput(dateString: string): string {
+    // Format ISO date string to YYYY-MM-DD for date input
     const date = new Date(dateString);
-    return date.toISOString().slice(0, 16);
+    return date.toISOString().slice(0, 10);
+  }
+
+  private formatDateToISO(dateString: string): string {
+    // Convert YYYY-MM-DD to end of day (23:59:59) in user's local timezone
+    // This makes the expiration intuitive - gallery expires at midnight on the selected date
+    const date = new Date(dateString + 'T23:59:59');
+    return date.toISOString();
+  }
+
+  getMinDate(): string {
+    // Set minimum date to today (users can set expiration for end of today if they want)
+    const today = new Date();
+    return today.toISOString().slice(0, 10);
   }
 }

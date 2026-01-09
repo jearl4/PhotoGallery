@@ -32,15 +32,15 @@ func NewProcessor() *Processor {
 
 // ImageMetadata holds extracted metadata from an image
 type ImageMetadata struct {
-	Width       int
-	Height      int
-	CameraModel string
-	DateTaken   string
-	ISO         int
-	Aperture    string
+	Width        int
+	Height       int
+	CameraModel  string
+	DateTaken    string
+	ISO          int
+	Aperture     string
 	ShutterSpeed string
-	FocalLength string
-	GPS         *GPSData
+	FocalLength  string
+	GPS          *GPSData
 }
 
 type GPSData struct {
@@ -202,21 +202,23 @@ func (p *Processor) ApplyWatermark(img image.Image, opts WatermarkOptions) image
 	var x, y int
 	textWidth := len(opts.Text) * 7 // Approximate width (basic font is ~7px per char)
 	textHeight := 13                // Basic font height (including ascent and descent)
+	padding := 5                    // Padding around text in background box
 
-	margin := 20 // Margin from edges
+	// Total height of background box (text + padding on both sides)
+	boxHeight := textHeight + padding*2
 
 	switch opts.Position {
 	case "bottom-left":
-		x = margin
-		y = height - margin - textHeight
+		x = 0
+		y = height - boxHeight
 	case "center":
 		x = (width - textWidth) / 2
-		y = (height-textHeight)/2 + textHeight/2
+		y = (height - textHeight) / 2
 	case "bottom-right":
 		fallthrough
 	default:
-		x = width - textWidth - margin
-		y = height - margin - textHeight
+		x = width - textWidth - padding*2
+		y = height - boxHeight
 	}
 
 	// Draw the watermark text with a semi-transparent background for readability
