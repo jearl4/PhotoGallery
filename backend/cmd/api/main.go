@@ -1,3 +1,5 @@
+//go:build !local
+
 package main
 
 import (
@@ -14,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
+	"photographer-gallery/backend/internal/api"
 	"photographer-gallery/backend/internal/api/handlers"
 	"photographer-gallery/backend/internal/api/middleware"
 	appConfig "photographer-gallery/backend/internal/config"
@@ -26,21 +29,9 @@ import (
 	"photographer-gallery/backend/pkg/logger"
 )
 
+// App holds application dependencies.
 type App struct {
-	// Handlers
-	authHandler    *handlers.AuthHandler
-	galleryHandler *handlers.GalleryHandler
-	photoHandler   *handlers.PhotoHandler
-	clientHandler  *handlers.ClientHandler
-
-	// Middleware
-	authMiddleware    *middleware.AuthMiddleware
-	sessionMiddleware *middleware.SessionMiddleware
-
-	// Services
-	authService *cognitoAuth.Service
-
-	// Config
+	router *api.Router
 	config *appConfig.Config
 }
 
@@ -56,43 +47,62 @@ func main() {
 
 func initializeApp() (*App, error) {
 	ctx := context.Background()
-
-	// Load configuration
 	cfg := appConfig.Load()
 
-	// Load AWS config
 	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.AWSRegion))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Initialize AWS clients
+	// Initialize infrastructure
 	dynamoClient := dynamodb.NewFromConfig(awsCfg)
 	s3Client := s3.NewFromConfig(awsCfg)
 
 	// Initialize repositories
-	galleryRepo := dynamodbRepo.NewGalleryRepository(
-		dynamoClient,
-		fmt.Sprintf("%s-galleries-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
-	)
-	photoRepo := dynamodbRepo.NewPhotoRepository(
-		dynamoClient,
-		fmt.Sprintf("%s-photos-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
-	)
-	favoriteRepo := dynamodbRepo.NewFavoriteRepository(
-		dynamoClient,
-		fmt.Sprintf("%s-favorites-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
-	)
-	sessionRepo := dynamodbRepo.NewClientSessionRepository(
-		dynamoClient,
-		fmt.Sprintf("%s-sessions-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
-	)
-	photographerRepo := dynamodbRepo.NewPhotographerRepository(
-		dynamoClient,
-		fmt.Sprintf("%s-photographers-%s", cfg.DynamoDBTablePrefix, cfg.APIStage),
-	)
+	repos := initRepositories(dynamoClient, cfg)
 
 	// Initialize services
+	services := initServices(s3Client, repos, cfg)
+
+	// Build router with routes and middleware
+	router := buildRouter(services, cfg)
+
+	logger.Info("Application initialized", map[string]interface{}{
+		"stage":  cfg.APIStage,
+		"region": cfg.AWSRegion,
+	})
+
+	return &App{router: router, config: cfg}, nil
+}
+
+type repositories struct {
+	gallery      *dynamodbRepo.GalleryRepository
+	photo        *dynamodbRepo.PhotoRepository
+	favorite     *dynamodbRepo.FavoriteRepository
+	session      *dynamodbRepo.ClientSessionRepository
+	photographer *dynamodbRepo.PhotographerRepository
+}
+
+func initRepositories(client *dynamodb.Client, cfg *appConfig.Config) *repositories {
+	prefix := cfg.DynamoDBTablePrefix
+	stage := cfg.APIStage
+	return &repositories{
+		gallery:      dynamodbRepo.NewGalleryRepository(client, fmt.Sprintf("%s-galleries-%s", prefix, stage)),
+		photo:        dynamodbRepo.NewPhotoRepository(client, fmt.Sprintf("%s-photos-%s", prefix, stage)),
+		favorite:     dynamodbRepo.NewFavoriteRepository(client, fmt.Sprintf("%s-favorites-%s", prefix, stage)),
+		session:      dynamodbRepo.NewClientSessionRepository(client, fmt.Sprintf("%s-sessions-%s", prefix, stage)),
+		photographer: dynamodbRepo.NewPhotographerRepository(client, fmt.Sprintf("%s-photographers-%s", prefix, stage)),
+	}
+}
+
+type services struct {
+	gallery *gallery.Service
+	photo   *photo.Service
+	session *auth.SessionService
+	auth    *cognitoAuth.Service
+}
+
+func initServices(s3Client *s3.Client, repos *repositories, cfg *appConfig.Config) *services {
 	storageService := storage.NewService(
 		s3Client,
 		cfg.S3BucketOriginal,
@@ -101,44 +111,88 @@ func initializeApp() (*App, error) {
 		time.Duration(cfg.SignedURLExpiration)*time.Hour,
 	)
 
-	galleryService := gallery.NewService(galleryRepo, photoRepo, storageService)
-	photoService := photo.NewService(photoRepo, galleryRepo, favoriteRepo, storageService)
-
-	// Generate JWT secret for sessions (in production, use AWS Secrets Manager)
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "default-secret-change-in-production"
 		logger.Warn("Using default JWT secret - set JWT_SECRET environment variable", nil)
 	}
-	sessionService := auth.NewSessionService(sessionRepo, jwtSecret, cfg.SessionTTLHours)
 
-	authService := cognitoAuth.NewService(cfg.CognitoUserPoolID, cfg.CognitoRegion)
+	return &services{
+		gallery: gallery.NewService(repos.gallery, repos.photo, storageService),
+		photo:   photo.NewService(repos.photo, repos.gallery, repos.favorite, storageService),
+		session: auth.NewSessionService(repos.session, jwtSecret, cfg.SessionTTLHours),
+		auth:    cognitoAuth.NewService(cfg.CognitoUserPoolID, cfg.CognitoRegion),
+	}
+}
 
+func buildRouter(svc *services, cfg *appConfig.Config) *api.Router {
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(photographerRepo)
-	galleryHandler := handlers.NewGalleryHandler(galleryService)
-	photoHandler := handlers.NewPhotoHandler(photoService)
-	clientHandler := handlers.NewClientHandler(galleryService, photoService, sessionService)
+	authHandler := handlers.NewAuthHandler(nil) // Photographer repo not needed for GetMe
+	galleryHandler := handlers.NewGalleryHandler(svc.gallery)
+	photoHandler := handlers.NewPhotoHandler(svc.photo)
+	clientHandler := handlers.NewClientHandler(svc.gallery, svc.photo, svc.session)
 
 	// Initialize middleware
-	authMiddleware := middleware.NewAuthMiddleware(authService)
-	sessionMiddleware := middleware.NewSessionMiddleware(sessionService)
+	authMiddleware := middleware.NewAuthMiddleware(svc.auth)
+	sessionMiddleware := middleware.NewSessionMiddleware(svc.session)
 
-	logger.Info("Application initialized", map[string]interface{}{
-		"stage":  cfg.APIStage,
-		"region": cfg.AWSRegion,
+	router := api.NewRouter()
+
+	// Health check
+	router.GET("/health", func(req *api.Request) (*api.Response, error) {
+		return api.OK(map[string]string{"status": "healthy"}), nil
 	})
 
-	return &App{
-		authHandler:       authHandler,
-		galleryHandler:    galleryHandler,
-		photoHandler:      photoHandler,
-		clientHandler:     clientHandler,
-		authMiddleware:    authMiddleware,
-		sessionMiddleware: sessionMiddleware,
-		authService:       authService,
-		config:            cfg,
-	}, nil
+	// Photographer routes (authenticated)
+	photographerRoutes := api.NewRouter()
+	photographerRoutes.Use(authMiddlewareWrapper(authMiddleware))
+
+	photographerRoutes.GET("/api/v1/auth/me", wrapHandler(authHandler.GetMe))
+	photographerRoutes.POST("/api/v1/galleries", wrapHandler(galleryHandler.CreateGallery))
+	photographerRoutes.GET("/api/v1/galleries", wrapHandler(galleryHandler.ListGalleries))
+	photographerRoutes.GET("/api/v1/galleries/{id}", wrapHandler(galleryHandler.GetGallery))
+	photographerRoutes.PUT("/api/v1/galleries/{id}", wrapHandler(galleryHandler.UpdateGallery))
+	photographerRoutes.DELETE("/api/v1/galleries/{id}", wrapHandler(galleryHandler.DeleteGallery))
+	photographerRoutes.POST("/api/v1/galleries/{id}/expire", wrapHandler(galleryHandler.SetExpiration))
+	photographerRoutes.POST("/api/v1/galleries/{id}/photos/upload-url", wrapHandler(photoHandler.GetUploadURL))
+	photographerRoutes.GET("/api/v1/galleries/{id}/photos", wrapHandler(photoHandler.ListPhotos))
+	photographerRoutes.DELETE("/api/v1/galleries/{galleryId}/photos/{photoId}", wrapHandler(photoHandler.DeletePhoto))
+	photographerRoutes.GET("/api/v1/galleries/{id}/favorites", wrapHandler(photoHandler.GetFavorites))
+
+	// Client routes
+	router.POST("/api/v1/client/verify", wrapHandler(clientHandler.VerifyPassword))
+
+	clientRoutes := api.NewRouter()
+	clientRoutes.Use(sessionMiddlewareWrapper(sessionMiddleware))
+
+	clientRoutes.GET("/api/v1/client/galleries/{customUrl}", wrapHandler(clientHandler.GetGallery))
+	clientRoutes.GET("/api/v1/client/galleries/{customUrl}/photos", wrapHandler(clientHandler.ListPhotos))
+	clientRoutes.GET("/api/v1/client/photos/{photoId}/download-url", wrapHandler(clientHandler.GetDownloadURL))
+	clientRoutes.POST("/api/v1/client/photos/{photoId}/favorite", wrapHandler(clientHandler.ToggleFavorite))
+	clientRoutes.GET("/api/v1/client/session/favorites", wrapHandler(clientHandler.GetSessionFavorites))
+
+	// Mount sub-routers
+	router.Use(func(next api.Handler) api.Handler {
+		return func(req *api.Request) (*api.Response, error) {
+			// Try photographer routes first for /api/v1/ paths (excluding /api/v1/client/)
+			if len(req.Path) > 8 && req.Path[:8] == "/api/v1/" && (len(req.Path) < 15 || req.Path[:15] != "/api/v1/client/") {
+				resp, err := photographerRoutes.Route(req)
+				if resp != nil && resp.StatusCode != 404 {
+					return resp, err
+				}
+			}
+			// Try client routes for /api/v1/client/ paths
+			if len(req.Path) > 15 && req.Path[:15] == "/api/v1/client/" {
+				resp, err := clientRoutes.Route(req)
+				if resp != nil && resp.StatusCode != 404 {
+					return resp, err
+				}
+			}
+			return next(req)
+		}
+	})
+
+	return router
 }
 
 func (app *App) handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -147,285 +201,96 @@ func (app *App) handler(ctx context.Context, req events.APIGatewayProxyRequest) 
 		"path":   req.Path,
 	})
 
-	// Handle OPTIONS requests (CORS preflight)
 	if req.HTTPMethod == "OPTIONS" {
 		return middleware.HandlePreflight(app.config.AllowedOrigins), nil
 	}
 
-	// Route the request
-	response, err := app.route(ctx, req)
+	response, err := app.router.HandleLambda(ctx, req)
 	if err != nil {
 		logger.Error("Request failed", map[string]interface{}{"error": err.Error()})
-		response = events.APIGatewayProxyResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       `{"error": "Internal server error"}`,
-		}
 	}
 
-	// Add CORS headers
-	response = middleware.AddCORSHeaders(response, app.config.AllowedOrigins)
-
-	return response, nil
+	return middleware.AddCORSHeaders(response, app.config.AllowedOrigins), nil
 }
 
-func (app *App) route(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	path := req.Path
-	method := req.HTTPMethod
+// wrapHandler adapts http.HandlerFunc to api.Handler.
+func wrapHandler(fn http.HandlerFunc) api.Handler {
+	return func(req *api.Request) (*api.Response, error) {
+		rw := &responseCapture{statusCode: http.StatusOK, headers: http.Header{}}
 
-	// Health check
-	if path == "/health" && method == "GET" {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusOK,
-			Body:       `{"status": "healthy"}`,
-			Headers:    map[string]string{"Content-Type": "application/json"},
+		// Build HTTP request from api.Request
+		httpReq, err := http.NewRequestWithContext(req.Context, "GET", req.Path, strings.NewReader(req.Body))
+		if err != nil {
+			return api.InternalError("failed to create request"), nil
+		}
+		for k, v := range req.Headers {
+			httpReq.Header.Set(k, v)
+		}
+		// Store path params in context
+		ctx := httpReq.Context()
+		for k, v := range req.PathParams {
+			ctx = context.WithValue(ctx, k, v)
+		}
+		httpReq = httpReq.WithContext(ctx)
+
+		fn(rw, httpReq)
+
+		headers := make(map[string]string)
+		for k, vals := range rw.headers {
+			if len(vals) > 0 {
+				headers[k] = vals[0]
+			}
+		}
+		return &api.Response{
+			StatusCode: rw.statusCode,
+			Body:       rw.body,
+			Headers:    headers,
 		}, nil
 	}
-
-	// Client routes (no photographer auth required)
-	if strings.HasPrefix(path, "/api/v1/client/") {
-		return app.routeClientRequests(ctx, req)
-	}
-
-	// Photographer routes (require authentication)
-	return app.routePhotographerRequests(ctx, req)
 }
 
-func (app *App) routePhotographerRequests(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// Verify photographer token
-	authCtx, err := app.authMiddleware.VerifyPhotographerToken(ctx, req)
-	if err != nil {
-		return unauthorizedResponse(err.Error()), nil
-	}
-
-	path := req.Path
-	method := req.HTTPMethod
-
-	// Extract path parameters
-	ctx = extractPathParams(authCtx, req)
-
-	// Auth routes
-	if path == "/api/v1/auth/me" && method == "GET" {
-		return invokeHandler(ctx, req, app.authHandler.GetMe)
-	}
-
-	// Gallery routes
-	if path == "/api/v1/galleries" && method == "POST" {
-		return invokeHandler(ctx, req, app.galleryHandler.CreateGallery)
-	}
-	if path == "/api/v1/galleries" && method == "GET" {
-		return invokeHandler(ctx, req, app.galleryHandler.ListGalleries)
-	}
-	if matchPath(path, "/api/v1/galleries/{id}") && method == "GET" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}")
-		return invokeHandler(ctx, req, app.galleryHandler.GetGallery)
-	}
-	if matchPath(path, "/api/v1/galleries/{id}") && method == "PUT" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}")
-		return invokeHandler(ctx, req, app.galleryHandler.UpdateGallery)
-	}
-	if matchPath(path, "/api/v1/galleries/{id}") && method == "DELETE" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}")
-		return invokeHandler(ctx, req, app.galleryHandler.DeleteGallery)
-	}
-	if matchPath(path, "/api/v1/galleries/{id}/expire") && method == "POST" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}/expire")
-		return invokeHandler(ctx, req, app.galleryHandler.SetExpiration)
-	}
-
-	// Photo routes
-	if matchPath(path, "/api/v1/galleries/{id}/photos/upload-url") && method == "POST" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}/photos/upload-url")
-		return invokeHandler(ctx, req, app.photoHandler.GetUploadURL)
-	}
-	if matchPath(path, "/api/v1/galleries/{id}/photos") && method == "GET" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}/photos")
-		return invokeHandler(ctx, req, app.photoHandler.ListPhotos)
-	}
-	if matchPath(path, "/api/v1/galleries/{galleryId}/photos/{photoId}") && method == "DELETE" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{galleryId}/photos/{photoId}")
-		return invokeHandler(ctx, req, app.photoHandler.DeletePhoto)
-	}
-	if matchPath(path, "/api/v1/galleries/{id}/favorites") && method == "GET" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/galleries/{id}/favorites")
-		return invokeHandler(ctx, req, app.photoHandler.GetFavorites)
-	}
-
-	return notFoundResponse(), nil
-}
-
-func (app *App) routeClientRequests(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	path := req.Path
-	method := req.HTTPMethod
-
-	// Password verification (no auth required)
-	if path == "/api/v1/client/verify" && method == "POST" {
-		ctx = extractPathParams(ctx, req)
-		return invokeHandler(ctx, req, app.clientHandler.VerifyPassword)
-	}
-
-	// All other client routes require session token
-	sessionCtx, err := app.sessionMiddleware.VerifyClientSession(ctx, req)
-	if err != nil {
-		return unauthorizedResponse(err.Error()), nil
-	}
-
-	ctx = extractPathParams(sessionCtx, req)
-
-	// Client gallery routes
-	if matchPath(path, "/api/v1/client/galleries/{customUrl}") && method == "GET" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/client/galleries/{customUrl}")
-		return invokeHandler(ctx, req, app.clientHandler.GetGallery)
-	}
-	if matchPath(path, "/api/v1/client/galleries/{customUrl}/photos") && method == "GET" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/client/galleries/{customUrl}/photos")
-		return invokeHandler(ctx, req, app.clientHandler.ListPhotos)
-	}
-	if matchPath(path, "/api/v1/client/photos/{photoId}/download-url") && method == "GET" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/client/photos/{photoId}/download-url")
-		return invokeHandler(ctx, req, app.clientHandler.GetDownloadURL)
-	}
-	if matchPath(path, "/api/v1/client/photos/{photoId}/favorite") && method == "POST" {
-		ctx = extractPathParamsFromPattern(ctx, path, "/api/v1/client/photos/{photoId}/favorite")
-		return invokeHandler(ctx, req, app.clientHandler.ToggleFavorite)
-	}
-	if path == "/api/v1/client/session/favorites" && method == "GET" {
-		return invokeHandler(ctx, req, app.clientHandler.GetSessionFavorites)
-	}
-
-	return notFoundResponse(), nil
-}
-
-// Helper functions
-
-type handlerFunc func(http.ResponseWriter, *http.Request)
-
-func invokeHandler(ctx context.Context, req events.APIGatewayProxyRequest, handler handlerFunc) (events.APIGatewayProxyResponse, error) {
-	// Create a mock ResponseWriter to capture the response
-	rw := &responseWriter{
-		statusCode: http.StatusOK,
-		headers:    make(map[string]string),
-		body:       "",
-	}
-
-	// Create HTTP request from API Gateway event
-	httpReq, err := requestFromEvent(ctx, req)
-	if err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusBadRequest,
-			Body:       fmt.Sprintf(`{"error": "%s"}`, err.Error()),
-		}, nil
-	}
-
-	// Call the handler
-	handler(rw, httpReq)
-
-	return events.APIGatewayProxyResponse{
-		StatusCode: rw.statusCode,
-		Headers:    rw.headers,
-		Body:       rw.body,
-	}, nil
-}
-
-func matchPath(path, pattern string) bool {
-	// Simple path matching - in production use a proper router
-	parts := strings.Split(path, "/")
-	patternParts := strings.Split(pattern, "/")
-
-	if len(parts) != len(patternParts) {
-		return false
-	}
-
-	for i := range parts {
-		if strings.HasPrefix(patternParts[i], "{") && strings.HasSuffix(patternParts[i], "}") {
-			continue
-		}
-		if parts[i] != patternParts[i] {
-			return false
+func authMiddlewareWrapper(m *middleware.AuthMiddleware) api.Middleware {
+	return func(next api.Handler) api.Handler {
+		return func(req *api.Request) (*api.Response, error) {
+			// Simulate auth verification
+			ctx, err := m.VerifyPhotographerToken(req.Context, events.APIGatewayProxyRequest{
+				Headers: req.Headers,
+			})
+			if err != nil {
+				return api.Unauthorized(err.Error()), nil
+			}
+			req.Context = ctx
+			return next(req)
 		}
 	}
-
-	return true
 }
 
-func extractPathParams(ctx context.Context, req events.APIGatewayProxyRequest) context.Context {
-	// Extract path parameters from PathParameters map (populated by API Gateway)
-	if req.PathParameters != nil {
-		for key, value := range req.PathParameters {
-			ctx = context.WithValue(ctx, key, value)
+func sessionMiddlewareWrapper(m *middleware.SessionMiddleware) api.Middleware {
+	return func(next api.Handler) api.Handler {
+		return func(req *api.Request) (*api.Response, error) {
+			ctx, err := m.VerifyClientSession(req.Context, events.APIGatewayProxyRequest{
+				Headers: req.Headers,
+			})
+			if err != nil {
+				return api.Unauthorized(err.Error()), nil
+			}
+			req.Context = ctx
+			return next(req)
 		}
 	}
-	return ctx
 }
 
-// extractPathParamsFromPattern extracts path parameters by matching path against pattern
-func extractPathParamsFromPattern(ctx context.Context, path, pattern string) context.Context {
-	parts := strings.Split(path, "/")
-	patternParts := strings.Split(pattern, "/")
-
-	if len(parts) != len(patternParts) {
-		return ctx
-	}
-
-	for i := range parts {
-		if strings.HasPrefix(patternParts[i], "{") && strings.HasSuffix(patternParts[i], "}") {
-			// Extract parameter name (remove { and })
-			paramName := patternParts[i][1 : len(patternParts[i])-1]
-			ctx = context.WithValue(ctx, paramName, parts[i])
-		}
-	}
-
-	return ctx
-}
-
-func requestFromEvent(ctx context.Context, req events.APIGatewayProxyRequest) (*http.Request, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, req.HTTPMethod, req.Path, strings.NewReader(req.Body))
-	if err != nil {
-		return nil, err
-	}
-
-	for key, value := range req.Headers {
-		httpReq.Header.Set(key, value)
-	}
-
-	return httpReq, nil
-}
-
-func unauthorizedResponse(message string) events.APIGatewayProxyResponse {
-	return events.APIGatewayProxyResponse{
-		StatusCode: http.StatusUnauthorized,
-		Body:       fmt.Sprintf(`{"error": "%s"}`, message),
-		Headers:    map[string]string{"Content-Type": "application/json"},
-	}
-}
-
-func notFoundResponse() events.APIGatewayProxyResponse {
-	return events.APIGatewayProxyResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       `{"error": "Not found"}`,
-		Headers:    map[string]string{"Content-Type": "application/json"},
-	}
-}
-
-// responseWriter captures HTTP response for Lambda
-type responseWriter struct {
+// responseCapture captures handler output for http.ResponseWriter.
+type responseCapture struct {
 	statusCode int
-	headers    map[string]string
 	body       string
+	headers    http.Header
 }
 
-func (rw *responseWriter) Header() http.Header {
-	h := make(http.Header)
-	for k, v := range rw.headers {
-		h.Set(k, v)
-	}
-	return h
-}
-
-func (rw *responseWriter) Write(b []byte) (int, error) {
-	rw.body += string(b)
+func (r *responseCapture) Write(b []byte) (int, error) {
+	r.body += string(b)
 	return len(b), nil
 }
 
-func (rw *responseWriter) WriteHeader(statusCode int) {
-	rw.statusCode = statusCode
-}
+func (r *responseCapture) WriteHeader(code int) { r.statusCode = code }
+func (r *responseCapture) Header() http.Header   { return r.headers }
