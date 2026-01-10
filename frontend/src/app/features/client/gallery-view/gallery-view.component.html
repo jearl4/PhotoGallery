@@ -1,0 +1,146 @@
+<div class="gallery-view">
+  @if (isLoading()) {
+    <div class="loading-container">
+      <div class="spinner"></div>
+      <p>Loading gallery...</p>
+    </div>
+  } @else if (gallery()) {
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div class="header-left">
+          <h1>{{ gallery()!.name }}</h1>
+          @if (gallery()!.description) {
+            <p class="description">{{ gallery()!.description }}</p>
+          }
+          <div class="gallery-meta">
+            <span>{{ photos().length }} photos</span>
+            @if (favoriteCount() > 0) {
+              <span>•</span>
+              <span>{{ favoriteCount() }} favorites</span>
+            }
+          </div>
+        </div>
+
+        <button class="btn btn-ghost" (click)="logout()">
+          Exit Gallery
+        </button>
+      </div>
+    </header>
+
+    <!-- Filters -->
+    <div class="filters">
+      <div class="filter-buttons">
+        <button
+          class="filter-btn"
+          [class.active]="viewMode() === 'all'"
+          (click)="setViewMode('all')">
+          All Photos
+        </button>
+        <button
+          class="filter-btn"
+          [class.active]="viewMode() === 'favorites'"
+          (click)="setViewMode('favorites')">
+          Favorites ({{ favoriteCount() }})
+        </button>
+      </div>
+
+      @if (viewMode() === 'favorites' && favoriteCount() > 0) {
+        <button
+          class="btn btn-download-bulk"
+          (click)="downloadAllFavorites()"
+          [disabled]="bulkDownloading()">
+          @if (bulkDownloading()) {
+            <span class="spinner"></span>
+            Downloading {{ downloadProgress() }}/{{ favoriteCount() }}...
+          } @else {
+            ⬇ Download All Favorites
+          }
+        </button>
+      }
+    </div>
+
+    <!-- Photos Grid -->
+    <div class="photos-container">
+      @if (loadingPhotos()) {
+        <div class="loading-photos">
+          <div class="spinner"></div>
+          <p>Loading photos...</p>
+        </div>
+      } @else if (displayedPhotos().length === 0) {
+        <div class="empty-state">
+          @if (viewMode() === 'favorites') {
+            <div class="empty-icon">⭐</div>
+            <h3>No favorites yet</h3>
+            <p>Click the heart icon on photos to add them to your favorites</p>
+          } @else {
+            <div class="empty-icon">📷</div>
+            <h3>No photos available</h3>
+            <p>The photographer hasn't uploaded any photos yet</p>
+          }
+        </div>
+      } @else {
+        <div class="photos-grid">
+          @for (photo of displayedPhotos(); track photo.photoId) {
+            <div class="photo-card" (click)="viewPhoto(photo)">
+              <div class="photo-thumbnail">
+                <img
+                  [src]="getThumbnailUrl(photo)"
+                  [alt]="photo.fileName"
+                  loading="lazy">
+
+                <button
+                  class="favorite-btn"
+                  [class.active]="isFavorite(photo.photoId)"
+                  (click)="toggleFavorite(photo, $event)"
+                  [title]="isFavorite(photo.photoId) ? 'Remove from favorites' : 'Add to favorites'">
+                  {{ isFavorite(photo.photoId) ? '♥' : '♡' }}
+                </button>
+              </div>
+
+              <div class="photo-info">
+                @if (isFavorite(photo.photoId)) {
+                  <span class="favorite-count">1 ♥</span>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Photo Viewer Modal -->
+  @if (selectedPhoto()) {
+    <div class="modal-overlay" (click)="closeViewer()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <button class="btn-close" (click)="closeViewer()">✕</button>
+
+        <div class="photo-viewer">
+          <img [src]="getOptimizedUrl(selectedPhoto()!)" [alt]="selectedPhoto()!.fileName">
+        </div>
+
+        <div class="photo-actions">
+          <button
+            class="action-btn"
+            [class.active]="isSelectedPhotoFavorited()"
+            (click)="toggleFavorite(selectedPhoto()!, $event)">
+            {{ isSelectedPhotoFavorited() ? '♥' : '♡' }}
+            {{ isSelectedPhotoFavorited() ? 'Favorited' : 'Favorite' }}
+          </button>
+          <button
+            class="action-btn btn-download"
+            (click)="downloadPhoto(selectedPhoto()!)"
+            [disabled]="downloadingPhoto()">
+            @if (downloadingPhoto()) {
+              <span class="spinner-small"></span>
+              Downloading...
+            } @else {
+              ⬇ Download
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

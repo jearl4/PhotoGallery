@@ -1,0 +1,88 @@
+@if (isOpen()) {
+  <div class="lightbox-overlay" (click)="onOverlayClick($event)">
+    <!-- Close Button -->
+    <button class="lightbox-btn close-btn" (click)="close()" title="Close (Esc)">
+      ✕
+    </button>
+
+    <!-- Navigation -->
+    @if (photos().length > 1) {
+      <button
+        class="lightbox-btn nav-btn prev-btn"
+        (click)="previous($event)"
+        [disabled]="currentIndex() === 0"
+        title="Previous (←)">
+        ←
+      </button>
+
+      <button
+        class="lightbox-btn nav-btn next-btn"
+        (click)="next($event)"
+        [disabled]="currentIndex() === photos().length - 1"
+        title="Next (→)">
+        →
+      </button>
+    }
+
+    <!-- Image Container -->
+    <div class="lightbox-content">
+      @if (currentPhoto()) {
+        <img
+          [src]="getImageUrl()"
+          [alt]="currentPhoto()!.fileName"
+          class="lightbox-image"
+          [class.zoomed]="isZoomed()"
+          (click)="toggleZoom($event)"
+          (load)="onImageLoad()"
+          (error)="onImageError()">
+
+        @if (isLoading()) {
+          <div class="loading-spinner"></div>
+        }
+
+        @if (hasError()) {
+          <div class="error-message">Failed to load image</div>
+        }
+      }
+    </div>
+
+    <!-- Info Bar -->
+    @if (currentPhoto() && showInfo()) {
+      <div class="lightbox-info">
+        <div class="info-left">
+          <div class="photo-name">{{ currentPhoto()!.fileName }}</div>
+          @if (currentPhoto()!.metadata) {
+            <div class="photo-details">
+              @if (currentPhoto()!.metadata.width && currentPhoto()!.metadata.height) {
+                <span>{{ currentPhoto()!.metadata.width }} × {{ currentPhoto()!.metadata.height }}</span>
+              }
+              @if (currentPhoto()!.metadata.size) {
+                <span>{{ formatFileSize(currentPhoto()!.metadata.size) }}</span>
+              }
+            </div>
+          }
+        </div>
+
+        <div class="info-right">
+          @if (photos().length > 1) {
+            <span class="photo-count">{{ currentIndex() + 1 }} / {{ photos().length }}</span>
+          }
+          @if (showDownload()) {
+            <button class="info-btn" (click)="download($event)" title="Download">
+              ⬇
+            </button>
+          }
+          @if (showFavorite()) {
+            <button
+              class="info-btn"
+              [class.favorited]="isFavorite()"
+              (click)="toggleFavorite($event)"
+              title="{{ isFavorite() ? 'Remove from favorites' : 'Add to favorites' }}">
+              {{ isFavorite() ? '❤️' : '🤍' }}
+            </button>
+          }
+        </div>
+      </div>
+    }
+  </div>
+}

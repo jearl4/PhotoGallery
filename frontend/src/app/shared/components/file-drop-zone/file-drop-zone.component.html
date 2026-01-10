@@ -1,0 +1,31 @@
+<div
+  class="drop-zone"
+  [class.dragging]="isDragging()"
+  [class.disabled]="disabled()"
+  role="button"
+  tabindex="0"
+  (click)="fileInput.click()"
+  (keydown.enter)="fileInput.click()"
+  (keydown.space)="fileInput.click()">
+
+  <input
+    #fileInput
+    type="file"
+    class="file-input"
+    [accept]="getAcceptString()"
+    [multiple]="isMultiple()"
+    [disabled]="disabled()"
+    (change)="onFileInputChange($event)">
+
+  <div class="drop-zone-content">
+    <div class="drop-icon">
+      @if (isDragging()) {
+        <span class="icon-drop">&#128229;</span>
+      } @else {
+        <span class="icon-upload">&#128247;</span>
+      }
+    </div>
+    <div class="drop-label">{{ label() }}</div>
+    <div class="drop-hint">{{ hint() }}</div>
+  </div>
+</div>

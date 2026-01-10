@@ -1,0 +1,133 @@
+<div class="upload-page">
+  <div class="upload-container">
+    <div class="upload-header">
+      <button class="btn-back" (click)="goBack()">
+        ← Back to Gallery
+      </button>
+      <h1>Upload Photos</h1>
+    </div>
+
+    <!-- Drag and Drop Zone -->
+    <div
+      class="dropzone"
+      [class.dragging]="isDragging()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)"
+      (click)="fileInput.click()">
+      <div class="dropzone-content">
+        <div class="dropzone-icon">📸</div>
+        <h3>Drag and drop photos here</h3>
+        <p>or click to browse</p>
+        <span class="dropzone-hint">Supports: JPG, PNG, WebP</span>
+      </div>
+
+      <input
+        #fileInput
+        type="file"
+        multiple
+        accept="image/jpeg,image/jpg,image/png,image/webp"
+        (change)="onFileSelect($event)"
+        style="display: none">
+    </div>
+
+    <!-- Upload Queue -->
+    @if (files().length > 0) {
+      <div class="upload-queue">
+        <div class="queue-header">
+          <h3>Upload Queue ({{ files().length }} files)</h3>
+          <div class="queue-actions">
+            @if (!isUploading()) {
+              <button
+                class="btn btn-secondary"
+                (click)="clearAll()"
+                [disabled]="isUploading()">
+                Clear All
+              </button>
+              <button
+                class="btn btn-primary"
+                (click)="startUpload()"
+                [disabled]="isUploading()">
+                Upload All
+              </button>
+            } @else {
+              <button
+                class="btn btn-secondary"
+                (click)="cancelUpload()">
+                Cancel
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="upload-list">
+          @for (uploadFile of files(); track uploadFile.file.name) {
+            <div class="upload-item" [class.error]="uploadFile.status === 'error'">
+              <div class="upload-item-left">
+                <div class="file-icon">📷</div>
+                <div class="file-info">
+                  <div class="file-name">{{ uploadFile.file.name }}</div>
+                  <div class="file-size">{{ formatFileSize(uploadFile.file.size) }}</div>
+                </div>
+              </div>
+
+              <div class="upload-item-right">
+                @if (uploadFile.status === 'pending') {
+                  <span class="status-text">Pending</span>
+                  <button
+                    class="btn-remove"
+                    (click)="removeFile(uploadFile)"
+                    [disabled]="isUploading()">
+                    ✕
+                  </button>
+                } @else if (uploadFile.status === 'uploading') {
+                  <div class="progress-bar">
+                    <div
+                      class="progress-fill"
+                      [style.width.%]="uploadFile.progress">
+                    </div>
+                  </div>
+                  <span class="status-text">{{ uploadFile.progress }}%</span>
+                } @else if (uploadFile.status === 'success') {
+                  <span class="status-icon success">✓</span>
+                  <span class="status-text">Complete</span>
+                } @else if (uploadFile.status === 'error') {
+                  <span class="status-icon error">✕</span>
+                  <span class="status-text error">{{ uploadFile.errorMessage || 'Failed' }}</span>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- Overall Progress -->
+        @if (isUploading()) {
+          <div class="overall-progress">
+            <div class="progress-info">
+              <span>Uploading {{ completedCount() }} of {{ files().length }}</span>
+              <span>{{ overallProgress() }}%</span>
+            </div>
+            <div class="progress-bar large">
+              <div
+                class="progress-fill"
+                [style.width.%]="overallProgress()">
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Success Message -->
+        @if (allComplete()) {
+          <div class="success-message">
+            <div class="success-icon">✓</div>
+            <h3>Upload Complete!</h3>
+            <p>{{ successCount() }} photos uploaded successfully</p>
+            <button class="btn btn-primary" (click)="goBack()">
+              View Gallery
+            </button>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

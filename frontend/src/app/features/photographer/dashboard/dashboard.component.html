@@ -1,0 +1,108 @@
+<div class="dashboard">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <div class="header-left">
+        <h1>Photographer Gallery</h1>
+        @if (user$ | async; as user) {
+          <p class="user-email">{{ user.email }}</p>
+        }
+      </div>
+      <button class="btn btn-ghost" (click)="logout()">
+        Sign Out
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main">
+    <div class="container">
+      <!-- Page Title -->
+      <div class="page-header">
+        <h2>My Galleries</h2>
+        <button class="btn btn-primary" (click)="createGallery()">
+          <span class="btn-icon">+</span>
+          New Gallery
+        </button>
+      </div>
+
+      <!-- Loading State -->
+      @if (isLoading()) {
+        <div class="loading-container">
+          <div class="spinner"></div>
+          <p>Loading galleries...</p>
+        </div>
+      }
+
+      <!-- Empty State -->
+      @else if (galleries().length === 0) {
+        <div class="empty-state">
+          <div class="empty-icon">📸</div>
+          <h3>No galleries yet</h3>
+          <p>Create your first gallery to start sharing photos with clients</p>
+          <button class="btn btn-primary" (click)="createGallery()">
+            <span class="btn-icon">+</span>
+            Create Gallery
+          </button>
+        </div>
+      }
+
+      <!-- Galleries Grid -->
+      @else {
+        <div class="galleries-grid">
+          @for (gallery of galleries(); track gallery.galleryId) {
+            <div class="gallery-card" (click)="openGallery(gallery.galleryId)">
+              <div class="gallery-thumbnail">
+                @if (gallery.photoCount > 0) {
+                  <div class="thumbnail-placeholder">
+                    <span class="thumbnail-icon">📷</span>
+                  </div>
+                } @else {
+                  <div class="thumbnail-empty">
+                    <span class="thumbnail-icon">+</span>
+                    <span class="thumbnail-text">Add Photos</span>
+                  </div>
+                }
+              </div>
+
+              <div class="gallery-info">
+                <h3 class="gallery-name">{{ gallery.name }}</h3>
+                @if (gallery.description) {
+                  <p class="gallery-description">{{ gallery.description }}</p>
+                }
+
+                <div class="gallery-meta">
+                  <div class="meta-item">
+                    <span class="meta-icon">📷</span>
+                    <span>{{ gallery.photoCount }} photos</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-icon">👁</span>
+                    <span>{{ gallery.clientAccessCount }} views</span>
+                  </div>
+                </div>
+
+                <div class="gallery-status">
+                  @if (isExpired(gallery)) {
+                    <span class="status-badge status-expired">Expired</span>
+                  } @else if (gallery.expiresAt) {
+                    <span class="status-badge status-expires">
+                      Expires {{ formatDate(gallery.expiresAt) }}
+                    </span>
+                  } @else {
+                    <span class="status-badge status-active">Active</span>
+                  }
+                </div>
+
+                <div class="gallery-url">
+                  <span class="url-label">Gallery URL:</span>
+                  <code class="url-value">{{ getGalleryUrl(gallery.customUrl) }}</code>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  </main>
+</div>
