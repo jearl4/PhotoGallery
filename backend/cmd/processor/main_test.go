@@ -127,13 +127,13 @@ func TestS3KeyParse(t *testing.T) {
 	}{
 		{
 			name:      "valid key",
-			objectKey: "galleries/gallery-abc/photos/photo-123/original.jpg",
-			wantID:    "photo-123",
+			objectKey: "gal_abc123/photo_xyz789/original.jpg",
+			wantID:    "photo_xyz789",
 			wantErr:   false,
 		},
 		{
-			name:      "invalid key - missing parts",
-			objectKey: "galleries/gallery-123/images/photo-456/original.jpg",
+			name:      "invalid key - wrong prefix",
+			objectKey: "gallery_123/photo_456/original.jpg",
 			wantID:    "",
 			wantErr:   true,
 		},
@@ -216,7 +216,7 @@ func TestProcessPhoto(t *testing.T) {
 	}{
 		{
 			name:      "successful processing",
-			objectKey: "galleries/gallery-abc/photos/photo-123/original.jpg",
+			objectKey: "gal_abc123/photo_xyz789/original.jpg",
 			wantErr:   false,
 		},
 	}
@@ -300,7 +300,7 @@ func TestHandleS3Event(t *testing.T) {
 			{
 				S3: events.S3Entity{
 					Bucket: events.S3Bucket{Name: "test-bucket"},
-					Object: events.S3Object{Key: "galleries/gallery-123/photos/photo-456/original.jpg"},
+					Object: events.S3Object{Key: "gal_abc123/photo_xyz789/original.jpg"},
 				},
 			},
 		},

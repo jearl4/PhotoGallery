@@ -517,10 +517,10 @@ func TestProcessExpiredGalleries(t *testing.T) {
 		t.Fatalf("ProcessExpiredGalleries() error: %v", err)
 	}
 
-	// Verify gallery is marked as expired
-	updated, _ := service.GetByID(context.Background(), gallery.GalleryID)
-	if updated.Status != "expired" {
-		t.Errorf("Status = %v, want expired", updated.Status)
+	// Verify gallery was deleted (ProcessExpiredGalleries deletes expired galleries)
+	updated, err := service.GetByID(context.Background(), gallery.GalleryID)
+	if err == nil && updated != nil {
+		t.Errorf("Expected gallery to be deleted, but it still exists")
 	}
 }
 

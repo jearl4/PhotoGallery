@@ -171,25 +171,17 @@ func buildRouter(svc *services, cfg *appConfig.Config) *api.Router {
 	clientRoutes.POST("/api/v1/client/photos/{photoId}/favorite", wrapHandler(clientHandler.ToggleFavorite))
 	clientRoutes.GET("/api/v1/client/session/favorites", wrapHandler(clientHandler.GetSessionFavorites))
 
-	// Mount sub-routers
-	router.Use(func(next api.Handler) api.Handler {
-		return func(req *api.Request) (*api.Response, error) {
-			// Try photographer routes first for /api/v1/ paths (excluding /api/v1/client/)
-			if len(req.Path) > 8 && req.Path[:8] == "/api/v1/" && (len(req.Path) < 15 || req.Path[:15] != "/api/v1/client/") {
-				resp, err := photographerRoutes.Route(req)
-				if resp != nil && resp.StatusCode != 404 {
-					return resp, err
-				}
-			}
-			// Try client routes for /api/v1/client/ paths
-			if len(req.Path) > 15 && req.Path[:15] == "/api/v1/client/" {
-				resp, err := clientRoutes.Route(req)
-				if resp != nil && resp.StatusCode != 404 {
-					return resp, err
-				}
-			}
-			return next(req)
+	// Mount sub-routers via notFound handler (middleware only applies to matched routes)
+	router.SetNotFound(func(req *api.Request) (*api.Response, error) {
+		// Try photographer routes for /api/v1/ paths (excluding /api/v1/client/)
+		if strings.HasPrefix(req.Path, "/api/v1/") && !strings.HasPrefix(req.Path, "/api/v1/client/") {
+			return photographerRoutes.Route(req)
 		}
+		// Try client routes for /api/v1/client/ paths
+		if strings.HasPrefix(req.Path, "/api/v1/client/") {
+			return clientRoutes.Route(req)
+		}
+		return api.NotFound("Not found"), nil
 	})
 
 	return router
