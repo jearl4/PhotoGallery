@@ -23,4 +23,13 @@ type Photographer struct {
 	VerificationToken string `json:"-" dynamodbav:"verificationToken,omitempty"`
 	CertificateArn    string `json:"-" dynamodbav:"certificateArn,omitempty"`
 	DomainVerifiedAt  string `json:"domainVerifiedAt,omitempty" dynamodbav:"domainVerifiedAt,omitempty"`
+
+	// Analytics aggregates
+	TotalViews      int64 `json:"totalViews" dynamodbav:"totalViews"`
+	TotalDownloads  int64 `json:"totalDownloads" dynamodbav:"totalDownloads"`
+	TotalFavorites  int64 `json:"totalFavorites" dynamodbav:"totalFavorites"`
+	TotalGalleries  int   `json:"totalGalleries" dynamodbav:"totalGalleries"`
+	TotalPhotos     int   `json:"totalPhotos" dynamodbav:"totalPhotos"`
+	TotalClients    int64 `json:"totalClients" dynamodbav:"totalClients"`
+	ActiveGalleries int   `json:"activeGalleries" dynamodbav:"activeGalleries"`
 }

@@ -293,3 +293,65 @@ func (r *PhotographerRepository) ClearDomain(ctx context.Context, userID string)
 
 	return nil
 }
+
+// Analytics methods
+
+// IncrementTotalViews increments the total views counter
+func (r *PhotographerRepository) IncrementTotalViews(ctx context.Context, userID string, delta int64) error {
+	return r.incrementCounter(ctx, userID, "totalViews", delta)
+}
+
+// IncrementTotalDownloads increments the total downloads counter
+func (r *PhotographerRepository) IncrementTotalDownloads(ctx context.Context, userID string, delta int64) error {
+	return r.incrementCounter(ctx, userID, "totalDownloads", delta)
+}
+
+// IncrementTotalFavorites increments the total favorites counter
+func (r *PhotographerRepository) IncrementTotalFavorites(ctx context.Context, userID string, delta int) error {
+	return r.incrementCounter(ctx, userID, "totalFavorites", int64(delta))
+}
+
+// IncrementTotalGalleries increments the total galleries counter
+func (r *PhotographerRepository) IncrementTotalGalleries(ctx context.Context, userID string, delta int) error {
+	return r.incrementCounter(ctx, userID, "totalGalleries", int64(delta))
+}
+
+// IncrementTotalPhotos increments the total photos counter
+func (r *PhotographerRepository) IncrementTotalPhotos(ctx context.Context, userID string, delta int) error {
+	return r.incrementCounter(ctx, userID, "totalPhotos", int64(delta))
+}
+
+// IncrementTotalClients increments the total unique clients counter
+func (r *PhotographerRepository) IncrementTotalClients(ctx context.Context, userID string, delta int64) error {
+	return r.incrementCounter(ctx, userID, "totalClients", delta)
+}
+
+// IncrementActiveGalleries increments the active galleries counter
+func (r *PhotographerRepository) IncrementActiveGalleries(ctx context.Context, userID string, delta int) error {
+	return r.incrementCounter(ctx, userID, "activeGalleries", int64(delta))
+}
+
+// incrementCounter is a helper to increment any numeric counter field
+func (r *PhotographerRepository) incrementCounter(ctx context.Context, userID string, field string, delta int64) error {
+	_, err := r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", userID)},
+			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
+		},
+		UpdateExpression: aws.String(fmt.Sprintf("SET #field = if_not_exists(#field, :zero) + :delta")),
+		ExpressionAttributeNames: map[string]string{
+			"#field": field,
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":delta": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", delta)},
+			":zero":  &types.AttributeValueMemberN{Value: "0"},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to increment %s: %w", field, err)
+	}
+
+	return nil
+}

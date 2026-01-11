@@ -89,6 +89,11 @@ func (s *Service) RequestSubdomain(ctx context.Context, userID, subdomain string
 		return nil, ErrSubdomainReserved
 	}
 
+	// Check for banned/inappropriate words
+	if ContainsBannedWord(subdomain) {
+		return nil, ErrSubdomainBanned
+	}
+
 	// Check if already taken by another user
 	existing, err := s.photographerRepo.GetBySubdomain(ctx, subdomain)
 	if err != nil && err != photographer.ErrNotFound {

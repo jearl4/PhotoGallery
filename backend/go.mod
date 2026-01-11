@@ -1,6 +1,8 @@
 module photographer-gallery/backend
 
-go 1.24.3
+go 1.24.4
+
+toolchain go1.24.11
 
 require (
 	github.com/aws/aws-lambda-go v1.51.1
@@ -17,6 +19,7 @@ require (
 )
 
 require (
+	github.com/TwiN/go-away v1.8.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.6 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.8.30 // indirect
@@ -38,4 +41,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.5 // indirect
 	github.com/aws/smithy-go v1.24.0 // indirect
 	golang.org/x/image v0.0.0-20211028202545-6944b10bf410 // indirect
+	golang.org/x/text v0.32.0 // indirect
 )

@@ -21,13 +21,16 @@ import (
 	"photographer-gallery/backend/internal/api/handlers"
 	"photographer-gallery/backend/internal/api/middleware"
 	appConfig "photographer-gallery/backend/internal/config"
+	"photographer-gallery/backend/internal/domain/analytics"
 	"photographer-gallery/backend/internal/domain/auth"
 	"photographer-gallery/backend/internal/domain/customdomain"
 	"photographer-gallery/backend/internal/domain/gallery"
 	"photographer-gallery/backend/internal/domain/photo"
+	"photographer-gallery/backend/internal/domain/photographer"
 	dynamodbRepo "photographer-gallery/backend/internal/repository/dynamodb"
 	cognitoAuth "photographer-gallery/backend/internal/services/auth"
 	"photographer-gallery/backend/internal/services/storage"
+	pkgEvents "photographer-gallery/backend/pkg/events"
 	"photographer-gallery/backend/pkg/logger"
 )
 
@@ -98,11 +101,13 @@ func initRepositories(client *dynamodb.Client, cfg *appConfig.Config) *repositor
 }
 
 type services struct {
-	gallery *gallery.Service
-	photo   *photo.Service
-	session *auth.SessionService
-	auth    *cognitoAuth.Service
-	domain  *customdomain.Service
+	gallery   *gallery.Service
+	photo     *photo.Service
+	session   *auth.SessionService
+	auth      *cognitoAuth.Service
+	domain    *customdomain.Service
+	analytics *analytics.Service
+	eventBus  pkgEvents.EventBus
 }
 
 func initServices(s3Client *s3.Client, repos *repositories, cfg *appConfig.Config) *services {
@@ -126,12 +131,34 @@ func initServices(s3Client *s3.Client, repos *repositories, cfg *appConfig.Confi
 		baseDomain = "photographergallery.com"
 	}
 
+	// Initialize event bus
+	eventBus := pkgEvents.NewEventBus()
+
+	// Initialize analytics service
+	photographerRepoAdapter := &analytics.PhotographerRepoAdapter{
+		GetByID: func(ctx context.Context, userID string) (*photographer.Photographer, error) {
+			return repos.photographer.GetByID(ctx, userID)
+		},
+	}
+	analyticsService := analytics.NewService(
+		photographerRepoAdapter,
+		repos.gallery,
+		repos.photo,
+		repos.session,
+	)
+
+	// Initialize and register analytics event handler
+	analyticsEventHandler := analytics.NewEventHandler(repos.photographer, repos.gallery)
+	analyticsEventHandler.RegisterHandlers(eventBus)
+
 	return &services{
-		gallery: gallery.NewService(repos.gallery, repos.photo, storageService),
-		photo:   photo.NewService(repos.photo, repos.gallery, repos.favorite, storageService),
-		session: auth.NewSessionService(repos.session, jwtSecret, cfg.SessionTTLHours),
-		auth:    cognitoAuth.NewService(cfg.CognitoUserPoolID, cfg.CognitoRegion),
-		domain:  customdomain.NewService(repos.photographer, baseDomain),
+		gallery:   gallery.NewService(repos.gallery, repos.photo, storageService),
+		photo:    photo.NewService(repos.photo, repos.gallery, repos.favorite, storageService),
+		session:   auth.NewSessionService(repos.session, jwtSecret, cfg.SessionTTLHours),
+		auth:      cognitoAuth.NewService(cfg.CognitoUserPoolID, cfg.CognitoRegion),
+		domain:    customdomain.NewService(repos.photographer, baseDomain),
+		analytics: analyticsService,
+		eventBus:  eventBus,
 	}
 }
 
@@ -149,6 +176,7 @@ func buildRouter(svc *services, repos *repositories, cfg *appConfig.Config) *api
 	clientHandler := handlers.NewClientHandler(svc.gallery, svc.photo, svc.session)
 	domainHandler := handlers.NewDomainHandler(svc.domain)
 	portalHandler := handlers.NewPortalHandler(svc.domain, svc.gallery, repos.photographer)
+	analyticsHandler := handlers.NewAnalyticsHandler(svc.analytics)
 
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(svc.auth)
@@ -184,6 +212,12 @@ func buildRouter(svc *services, repos *repositories, cfg *appConfig.Config) *api
 	photographerRoutes.POST("/api/v1/domain/custom", wrapHandler(domainHandler.RequestCustomDomain))
 	photographerRoutes.POST("/api/v1/domain/verify", wrapHandler(domainHandler.VerifyDomain))
 	photographerRoutes.DELETE("/api/v1/domain", wrapHandler(domainHandler.RemoveDomain))
+
+	// Analytics routes (authenticated)
+	photographerRoutes.GET("/api/v1/analytics/summary", wrapHandler(analyticsHandler.GetDashboardSummary))
+	photographerRoutes.GET("/api/v1/analytics/galleries", wrapHandler(analyticsHandler.GetGalleriesAnalytics))
+	photographerRoutes.GET("/api/v1/analytics/photos/top", wrapHandler(analyticsHandler.GetTopPhotos))
+	photographerRoutes.GET("/api/v1/analytics/clients", wrapHandler(analyticsHandler.GetClientBehavior))
 
 	// Portal routes (accessed via custom domain, uses domain middleware)
 	portalRoutes := api.NewRouter()

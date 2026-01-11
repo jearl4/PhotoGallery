@@ -21,6 +21,10 @@ const (
 	GalleryUpdated  EventType = "gallery.updated"
 	GalleryDeleted  EventType = "gallery.deleted"
 	FavoriteToggled EventType = "favorite.toggled"
+
+	// Analytics events
+	PhotoDownloaded      EventType = "photo.downloaded"
+	ClientSessionCreated EventType = "client.session.created"
 )
 
 // Event represents an event in the system.
@@ -195,6 +199,24 @@ type GalleryDeletedPayload struct {
 // FavoriteToggledPayload contains data for favorite toggle events.
 type FavoriteToggledPayload struct {
 	PhotoID   string
+	GalleryID string
 	ClientID  string
 	Favorited bool
+}
+
+// PhotoDownloadedPayload contains data for photo download events.
+type PhotoDownloadedPayload struct {
+	PhotoID        string
+	GalleryID      string
+	PhotographerID string
+}
+
+// ClientSessionCreatedPayload contains data for new session events.
+type ClientSessionCreatedPayload struct {
+	SessionID      string
+	GalleryID      string
+	PhotographerID string
+	DeviceType     string
+	BrowserFamily  string
+	OSFamily       string
 }
