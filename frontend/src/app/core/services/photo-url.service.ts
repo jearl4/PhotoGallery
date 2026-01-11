@@ -48,4 +48,12 @@ export class PhotoUrlService {
   getBestAvailableUrl(photo: Photo): string {
     return this.getThumbnailUrl(photo);
   }
+
+  /**
+   * Generate URL directly from an S3 key
+   */
+  getUrlFromKey(key: string): string {
+    if (!key) return '';
+    return `${this.cdnUrl}/${key}`;
+  }
 }

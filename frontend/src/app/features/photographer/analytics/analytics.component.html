@@ -1,0 +1,276 @@
+<div class="analytics">
+  <app-header />
+
+  <main class="main">
+    <div class="container">
+      <div class="page-header">
+        <h2>Analytics Dashboard</h2>
+      </div>
+
+      <!-- Summary Cards -->
+      <section class="summary-section">
+        @if (isLoadingSummary()) {
+          <div class="loading-cards">
+            @for (i of [1, 2, 3, 4]; track i) {
+              <div class="stat-card skeleton"></div>
+            }
+          </div>
+        } @else {
+          <div class="stat-cards">
+            <div class="stat-card">
+              <div class="stat-icon">&#128065;</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ formatNumber(summary()?.totalViews ?? 0) }}</div>
+                <div class="stat-label">Total Views</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">&#11015;</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ formatNumber(summary()?.totalDownloads ?? 0) }}</div>
+                <div class="stat-label">Downloads</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">&#10084;</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ formatNumber(summary()?.totalFavorites ?? 0) }}</div>
+                <div class="stat-label">Favorites</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">&#128100;</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ formatNumber(summary()?.totalClients ?? 0) }}</div>
+                <div class="stat-label">Unique Clients</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">&#128444;</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ formatNumber(summary()?.totalPhotos ?? 0) }}</div>
+                <div class="stat-label">Photos</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">&#128193;</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ summary()?.activeGalleries ?? 0 }}/{{ summary()?.totalGalleries ?? 0 }}</div>
+                <div class="stat-label">Active Galleries</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">&#128451;</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ storageFormatted() }}</div>
+                <div class="stat-label">Storage Used</div>
+              </div>
+            </div>
+          </div>
+        }
+      </section>
+
+      <!-- Gallery Performance -->
+      <section class="section">
+        <div class="section-header">
+          <h3>Gallery Performance</h3>
+          <div class="sort-buttons">
+            <button
+              class="sort-btn"
+              [class.active]="gallerySortBy() === 'views'"
+              (click)="loadGalleries('views')">
+              Views
+            </button>
+            <button
+              class="sort-btn"
+              [class.active]="gallerySortBy() === 'downloads'"
+              (click)="loadGalleries('downloads')">
+              Downloads
+            </button>
+            <button
+              class="sort-btn"
+              [class.active]="gallerySortBy() === 'favorites'"
+              (click)="loadGalleries('favorites')">
+              Favorites
+            </button>
+            <button
+              class="sort-btn"
+              [class.active]="gallerySortBy() === 'clients'"
+              (click)="loadGalleries('clients')">
+              Clients
+            </button>
+          </div>
+        </div>
+
+        @if (isLoadingGalleries()) {
+          <div class="loading-table">
+            <div class="spinner"></div>
+          </div>
+        } @else if (galleries().length === 0) {
+          <div class="empty-state">
+            <p>No gallery data available</p>
+          </div>
+        } @else {
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Gallery</th>
+                  <th>Photos</th>
+                  <th>Views</th>
+                  <th>Downloads</th>
+                  <th>Favorites</th>
+                  <th>Clients</th>
+                  <th>Last Access</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (gallery of galleries(); track gallery.galleryId) {
+                  <tr>
+                    <td>
+                      <a [routerLink]="['/photographer/galleries', gallery.galleryId]" class="gallery-link">
+                        {{ gallery.name }}
+                      </a>
+                    </td>
+                    <td>{{ gallery.photoCount }}</td>
+                    <td>{{ formatNumber(gallery.viewCount) }}</td>
+                    <td>{{ formatNumber(gallery.downloadCount) }}</td>
+                    <td>{{ formatNumber(gallery.favoriteCount) }}</td>
+                    <td>{{ formatNumber(gallery.uniqueClients) }}</td>
+                    <td>{{ formatTimestamp(gallery.lastClientAccessAt) || '-' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+
+      <!-- Top Photos and Client Behavior -->
+      <div class="two-column">
+        <!-- Top Photos -->
+        <section class="section">
+          <div class="section-header">
+            <h3>Top Photos</h3>
+            <div class="sort-buttons">
+              <button
+                class="sort-btn"
+                [class.active]="photoMetric() === 'favorites'"
+                (click)="loadTopPhotos('favorites')">
+                Favorites
+              </button>
+              <button
+                class="sort-btn"
+                [class.active]="photoMetric() === 'downloads'"
+                (click)="loadTopPhotos('downloads')">
+                Downloads
+              </button>
+            </div>
+          </div>
+
+          @if (isLoadingPhotos()) {
+            <div class="loading-grid">
+              <div class="spinner"></div>
+            </div>
+          } @else if (topPhotos().length === 0) {
+            <div class="empty-state">
+              <p>No photo data available</p>
+            </div>
+          } @else {
+            <div class="photo-grid">
+              @for (photo of topPhotos(); track photo.photoId) {
+                <div class="photo-card">
+                  <div class="photo-thumbnail">
+                    @if (photo.thumbnailKey) {
+                      <img [src]="getThumbnailUrl(photo.thumbnailKey)" [alt]="photo.fileName" />
+                    } @else {
+                      <div class="placeholder-thumbnail">No image</div>
+                    }
+                  </div>
+                  <div class="photo-info">
+                    <div class="photo-name">{{ photo.fileName }}</div>
+                    <div class="photo-gallery">{{ photo.galleryName }}</div>
+                    <div class="photo-stats">
+                      <span>&#10084; {{ photo.favoriteCount }}</span>
+                      <span>&#11015; {{ photo.downloadCount }}</span>
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </section>
+
+        <!-- Client Behavior -->
+        <section class="section">
+          <div class="section-header">
+            <h3>Client Devices</h3>
+          </div>
+
+          @if (isLoadingClients()) {
+            <div class="loading-chart">
+              <div class="spinner"></div>
+            </div>
+          } @else if (!clientBehavior()) {
+            <div class="empty-state">
+              <p>No client data available</p>
+            </div>
+          } @else {
+            <div class="device-breakdown">
+              <div class="device-item">
+                <div class="device-icon">&#128241;</div>
+                <div class="device-info">
+                  <div class="device-label">Mobile</div>
+                  <div class="device-bar">
+                    <div class="device-fill" [style.width.%]="getDevicePercentage('mobile')"></div>
+                  </div>
+                </div>
+                <div class="device-value">{{ getDevicePercentage('mobile') }}%</div>
+              </div>
+
+              <div class="device-item">
+                <div class="device-icon">&#128187;</div>
+                <div class="device-info">
+                  <div class="device-label">Desktop</div>
+                  <div class="device-bar">
+                    <div class="device-fill" [style.width.%]="getDevicePercentage('desktop')"></div>
+                  </div>
+                </div>
+                <div class="device-value">{{ getDevicePercentage('desktop') }}%</div>
+              </div>
+
+              <div class="device-item">
+                <div class="device-icon">&#128218;</div>
+                <div class="device-info">
+                  <div class="device-label">Tablet</div>
+                  <div class="device-bar">
+                    <div class="device-fill" [style.width.%]="getDevicePercentage('tablet')"></div>
+                  </div>
+                </div>
+                <div class="device-value">{{ getDevicePercentage('tablet') }}%</div>
+              </div>
+            </div>
+
+            @if (clientBehavior()?.browsers?.length) {
+              <div class="browser-breakdown">
+                <h4>Browsers</h4>
+                @for (browser of clientBehavior()?.browsers; track browser.browser) {
+                  <div class="browser-item">
+                    <span class="browser-name">{{ browser.browser }}</span>
+                    <span class="browser-count">{{ browser.count }} ({{ browser.percentage | number:'1.0-0' }}%)</span>
+                  </div>
+                }
+              </div>
+            }
+          }
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
