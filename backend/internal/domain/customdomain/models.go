@@ -1,6 +1,10 @@
 package customdomain
 
-import "errors"
+import (
+	"errors"
+
+	goaway "github.com/TwiN/go-away"
+)
 
 var (
 	ErrSubdomainTaken       = errors.New("subdomain is already taken")
@@ -99,4 +103,13 @@ var reservedSubdomains = map[string]bool{
 // IsReservedSubdomain checks if a subdomain is reserved
 func IsReservedSubdomain(subdomain string) bool {
 	return reservedSubdomains[subdomain]
+}
+
+// ErrSubdomainBanned is returned when subdomain contains banned words
+var ErrSubdomainBanned = errors.New("subdomain contains inappropriate language")
+
+// ContainsBannedWord checks if the subdomain contains profanity or inappropriate words
+// Uses the go-away library which maintains a comprehensive list internally
+func ContainsBannedWord(subdomain string) bool {
+	return goaway.IsProfane(subdomain)
 }

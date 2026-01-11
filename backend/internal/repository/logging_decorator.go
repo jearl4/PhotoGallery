@@ -98,6 +98,46 @@ func (r *LoggingGalleryRepository) IncrementClientAccessCount(ctx context.Contex
 	return err
 }
 
+// IncrementViewCount logs view count increment operations.
+func (r *LoggingGalleryRepository) IncrementViewCount(ctx context.Context, galleryID string, delta int64) error {
+	start := time.Now()
+	err := r.repo.IncrementViewCount(ctx, galleryID, delta)
+	r.logOperation("IncrementViewCount", galleryID, start, err)
+	return err
+}
+
+// IncrementDownloadCount logs download count increment operations.
+func (r *LoggingGalleryRepository) IncrementDownloadCount(ctx context.Context, galleryID string, delta int64) error {
+	start := time.Now()
+	err := r.repo.IncrementDownloadCount(ctx, galleryID, delta)
+	r.logOperation("IncrementDownloadCount", galleryID, start, err)
+	return err
+}
+
+// IncrementFavoriteCount logs favorite count increment operations.
+func (r *LoggingGalleryRepository) IncrementFavoriteCount(ctx context.Context, galleryID string, delta int) error {
+	start := time.Now()
+	err := r.repo.IncrementFavoriteCount(ctx, galleryID, delta)
+	r.logOperation("IncrementFavoriteCount", galleryID, start, err)
+	return err
+}
+
+// IncrementUniqueClients logs unique clients increment operations.
+func (r *LoggingGalleryRepository) IncrementUniqueClients(ctx context.Context, galleryID string) error {
+	start := time.Now()
+	err := r.repo.IncrementUniqueClients(ctx, galleryID)
+	r.logOperation("IncrementUniqueClients", galleryID, start, err)
+	return err
+}
+
+// UpdateLastClientAccess logs last client access update operations.
+func (r *LoggingGalleryRepository) UpdateLastClientAccess(ctx context.Context, galleryID string) error {
+	start := time.Now()
+	err := r.repo.UpdateLastClientAccess(ctx, galleryID)
+	r.logOperation("UpdateLastClientAccess", galleryID, start, err)
+	return err
+}
+
 func (r *LoggingGalleryRepository) logOperation(operation, identifier string, start time.Time, err error) {
 	duration := time.Since(start)
 	fields := map[string]interface{}{

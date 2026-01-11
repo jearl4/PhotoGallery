@@ -78,7 +78,9 @@ func initializeApp() (*SchedulerApp, error) {
 
 // handleScheduledEvent is triggered daily by EventBridge to clean up expired galleries
 func (app *SchedulerApp) handleScheduledEvent(ctx context.Context, event interface{}) error {
-	log.Printf("Starting scheduled gallery cleanup task at %v", time.Now().UTC())
+	startTime := time.Now().UTC()
+	log.Printf("=== SCHEDULER START === Time: %v", startTime.Format(time.RFC3339))
+	log.Printf("Environment: STAGE=%s, TABLE_PREFIX=%s", os.Getenv("STAGE"), os.Getenv("DYNAMODB_TABLE_PREFIX"))
 
 	// Process expired galleries (deletes galleries where expiresAt < now)
 	if err := app.galleryService.ProcessExpiredGalleries(ctx, 100); err != nil {
@@ -86,6 +88,7 @@ func (app *SchedulerApp) handleScheduledEvent(ctx context.Context, event interfa
 		return fmt.Errorf("failed to process expired galleries: %w", err)
 	}
 
-	log.Printf("Cleanup completed successfully at %v", time.Now().UTC())
+	duration := time.Since(startTime)
+	log.Printf("=== SCHEDULER END === Duration: %v", duration)
 	return nil
 }

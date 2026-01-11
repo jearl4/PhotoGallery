@@ -1,18 +1,5 @@
 <div class="dashboard">
-  <!-- Header -->
-  <header class="header">
-    <div class="header-content">
-      <div class="header-left">
-        <h1>Photographer Gallery</h1>
-        @if (user$ | async; as user) {
-          <p class="user-email">{{ user.email }}</p>
-        }
-      </div>
-      <button class="btn btn-ghost" (click)="logout()">
-        Sign Out
-      </button>
-    </div>
-  </header>
+  <app-header />
 
   <!-- Main Content -->
   <main class="main">

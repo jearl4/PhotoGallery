@@ -69,6 +69,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/photographer/settings/settings.component').then(m => m.SettingsComponent)
       },
       {
+        path: 'analytics',
+        loadComponent: () => import('./features/photographer/analytics/analytics.component').then(m => m.AnalyticsComponent)
+      },
+      {
         path: '',
         redirectTo: 'dashboard',
         pathMatch: 'full'

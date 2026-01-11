@@ -26,23 +26,30 @@ func NewGalleryRepository(client *dynamodb.Client, tableName string) *GalleryRep
 }
 
 type galleryItem struct {
-	PK                string     `dynamodbav:"PK"`
-	SK                string     `dynamodbav:"SK"`
-	GalleryID         string     `dynamodbav:"galleryId"`
-	PhotographerID    string     `dynamodbav:"photographerId"`
-	Name              string     `dynamodbav:"name"`
-	Description       string     `dynamodbav:"description"`
-	CustomURL         string     `dynamodbav:"customUrl"`
-	Password          string     `dynamodbav:"password"`
-	CreatedAt         string     `dynamodbav:"createdAt"`
-	ExpiresAt         *string    `dynamodbav:"expiresAt,omitempty"`
-	Status            string     `dynamodbav:"status"`
-	PhotoCount        int        `dynamodbav:"photoCount"`
-	TotalSize         int64      `dynamodbav:"totalSize"`
-	ClientAccessCount int        `dynamodbav:"clientAccessCount"`
-	EnableWatermark   bool       `dynamodbav:"enableWatermark"`
-	WatermarkText     string     `dynamodbav:"watermarkText,omitempty"`
-	WatermarkPosition string     `dynamodbav:"watermarkPosition,omitempty"`
+	PK                string  `dynamodbav:"PK"`
+	SK                string  `dynamodbav:"SK"`
+	GalleryID         string  `dynamodbav:"galleryId"`
+	PhotographerID    string  `dynamodbav:"photographerId"`
+	Name              string  `dynamodbav:"name"`
+	Description       string  `dynamodbav:"description"`
+	CustomURL         string  `dynamodbav:"customUrl"`
+	Password          string  `dynamodbav:"password"`
+	CreatedAt         string  `dynamodbav:"createdAt"`
+	ExpiresAt         *string `dynamodbav:"expiresAt,omitempty"`
+	Status            string  `dynamodbav:"status"`
+	PhotoCount        int     `dynamodbav:"photoCount"`
+	TotalSize         int64   `dynamodbav:"totalSize"`
+	ClientAccessCount int     `dynamodbav:"clientAccessCount"`
+	EnableWatermark   bool    `dynamodbav:"enableWatermark"`
+	WatermarkText     string  `dynamodbav:"watermarkText,omitempty"`
+	WatermarkPosition string  `dynamodbav:"watermarkPosition,omitempty"`
+
+	// Analytics
+	ViewCount          int64   `dynamodbav:"viewCount"`
+	TotalDownloads     int64   `dynamodbav:"totalDownloads"`
+	TotalFavorites     int64   `dynamodbav:"totalFavorites"`
+	UniqueClients      int64   `dynamodbav:"uniqueClients"`
+	LastClientAccessAt *string `dynamodbav:"lastClientAccessAt,omitempty"`
 }
 
 func (r *GalleryRepository) Create(ctx context.Context, gallery *repository.Gallery) error {
@@ -363,6 +370,10 @@ func itemToGallery(item *galleryItem) *repository.Gallery {
 		EnableWatermark:   item.EnableWatermark,
 		WatermarkText:     item.WatermarkText,
 		WatermarkPosition: item.WatermarkPosition,
+		ViewCount:         item.ViewCount,
+		TotalDownloads:    item.TotalDownloads,
+		TotalFavorites:    item.TotalFavorites,
+		UniqueClients:     item.UniqueClients,
 	}
 
 	// Parse CreatedAt
@@ -379,6 +390,13 @@ func itemToGallery(item *galleryItem) *repository.Gallery {
 		}
 	}
 
+	// Parse LastClientAccessAt
+	if item.LastClientAccessAt != nil && *item.LastClientAccessAt != "" {
+		if t, err := parseTime(*item.LastClientAccessAt); err == nil {
+			gallery.LastClientAccessAt = &t
+		}
+	}
+
 	return gallery
 }
 
@@ -390,4 +408,86 @@ func parseTime(timeStr string) (time.Time, error) {
 	}
 	// Fallback to RFC3339
 	return time.Parse(time.RFC3339, timeStr)
+}
+
+// Analytics methods
+
+// IncrementViewCount increments the gallery view count
+func (r *GalleryRepository) IncrementViewCount(ctx context.Context, galleryID string, delta int64) error {
+	return r.incrementGalleryCounter(ctx, galleryID, "viewCount", delta)
+}
+
+// IncrementDownloadCount increments the gallery download count
+func (r *GalleryRepository) IncrementDownloadCount(ctx context.Context, galleryID string, delta int64) error {
+	return r.incrementGalleryCounter(ctx, galleryID, "totalDownloads", delta)
+}
+
+// IncrementFavoriteCount increments the gallery favorite count
+func (r *GalleryRepository) IncrementFavoriteCount(ctx context.Context, galleryID string, delta int) error {
+	return r.incrementGalleryCounter(ctx, galleryID, "totalFavorites", int64(delta))
+}
+
+// IncrementUniqueClients increments the unique clients counter
+func (r *GalleryRepository) IncrementUniqueClients(ctx context.Context, galleryID string) error {
+	return r.incrementGalleryCounter(ctx, galleryID, "uniqueClients", 1)
+}
+
+// UpdateLastClientAccess updates the last client access timestamp
+func (r *GalleryRepository) UpdateLastClientAccess(ctx context.Context, galleryID string) error {
+	gallery, err := r.GetByID(ctx, galleryID)
+	if err != nil {
+		return err
+	}
+	if gallery == nil {
+		return fmt.Errorf("gallery not found")
+	}
+
+	now := time.Now().Format("2006-01-02T15:04:05Z07:00")
+
+	_, err = r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PHOTOGRAPHER#%s", gallery.PhotographerID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("GALLERY#%s", galleryID)},
+		},
+		UpdateExpression: aws.String("SET lastClientAccessAt = :now"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":now": &types.AttributeValueMemberS{Value: now},
+		},
+	})
+
+	return err
+}
+
+// incrementGalleryCounter is a helper to increment any numeric counter field on a gallery
+func (r *GalleryRepository) incrementGalleryCounter(ctx context.Context, galleryID string, field string, delta int64) error {
+	gallery, err := r.GetByID(ctx, galleryID)
+	if err != nil {
+		return err
+	}
+	if gallery == nil {
+		return fmt.Errorf("gallery not found")
+	}
+
+	_, err = r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PHOTOGRAPHER#%s", gallery.PhotographerID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("GALLERY#%s", galleryID)},
+		},
+		UpdateExpression: aws.String("SET #field = if_not_exists(#field, :zero) + :delta"),
+		ExpressionAttributeNames: map[string]string{
+			"#field": field,
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":delta": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", delta)},
+			":zero":  &types.AttributeValueMemberN{Value: "0"},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to increment gallery %s: %w", field, err)
+	}
+
+	return nil
 }

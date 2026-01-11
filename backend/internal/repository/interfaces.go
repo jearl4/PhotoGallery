@@ -15,25 +15,41 @@ type Photographer struct {
 	Plan        string    `dynamodbav:"plan" json:"plan"` // free, pro
 	CreatedAt   time.Time `dynamodbav:"createdAt" json:"createdAt"`
 	UpdatedAt   time.Time `dynamodbav:"updatedAt" json:"updatedAt"`
+
+	// Analytics aggregates
+	TotalViews      int64 `dynamodbav:"totalViews" json:"totalViews"`
+	TotalDownloads  int64 `dynamodbav:"totalDownloads" json:"totalDownloads"`
+	TotalFavorites  int64 `dynamodbav:"totalFavorites" json:"totalFavorites"`
+	TotalGalleries  int   `dynamodbav:"totalGalleries" json:"totalGalleries"`
+	TotalPhotos     int   `dynamodbav:"totalPhotos" json:"totalPhotos"`
+	TotalClients    int64 `dynamodbav:"totalClients" json:"totalClients"`
+	ActiveGalleries int   `dynamodbav:"activeGalleries" json:"activeGalleries"`
 }
 
 // Gallery represents a photo gallery
 type Gallery struct {
-	GalleryID         string    `dynamodbav:"galleryId" json:"galleryId"`
-	PhotographerID    string    `dynamodbav:"photographerId" json:"photographerId"`
-	Name              string    `dynamodbav:"name" json:"name"`
-	Description       string    `dynamodbav:"description" json:"description"`
-	CustomURL         string    `dynamodbav:"customUrl" json:"customUrl"`
-	Password          string    `dynamodbav:"password" json:"-"` // bcrypt hash, never expose in JSON
-	CreatedAt         time.Time `dynamodbav:"createdAt" json:"createdAt"`
+	GalleryID         string     `dynamodbav:"galleryId" json:"galleryId"`
+	PhotographerID    string     `dynamodbav:"photographerId" json:"photographerId"`
+	Name              string     `dynamodbav:"name" json:"name"`
+	Description       string     `dynamodbav:"description" json:"description"`
+	CustomURL         string     `dynamodbav:"customUrl" json:"customUrl"`
+	Password          string     `dynamodbav:"password" json:"-"` // bcrypt hash, never expose in JSON
+	CreatedAt         time.Time  `dynamodbav:"createdAt" json:"createdAt"`
 	ExpiresAt         *time.Time `dynamodbav:"expiresAt,omitempty" json:"expiresAt,omitempty"`
-	Status            string    `dynamodbav:"status" json:"status"` // active, expired, archived
-	PhotoCount        int       `dynamodbav:"photoCount" json:"photoCount"`
-	TotalSize         int64     `dynamodbav:"totalSize" json:"totalSize"`
-	ClientAccessCount int       `dynamodbav:"clientAccessCount" json:"clientAccessCount"`
-	EnableWatermark   bool      `dynamodbav:"enableWatermark" json:"enableWatermark"`
-	WatermarkText     string    `dynamodbav:"watermarkText,omitempty" json:"watermarkText,omitempty"`
-	WatermarkPosition string    `dynamodbav:"watermarkPosition,omitempty" json:"watermarkPosition,omitempty"` // bottom-right, bottom-left, center
+	Status            string     `dynamodbav:"status" json:"status"` // active, expired, archived
+	PhotoCount        int        `dynamodbav:"photoCount" json:"photoCount"`
+	TotalSize         int64      `dynamodbav:"totalSize" json:"totalSize"`
+	ClientAccessCount int        `dynamodbav:"clientAccessCount" json:"clientAccessCount"`
+	EnableWatermark   bool       `dynamodbav:"enableWatermark" json:"enableWatermark"`
+	WatermarkText     string     `dynamodbav:"watermarkText,omitempty" json:"watermarkText,omitempty"`
+	WatermarkPosition string     `dynamodbav:"watermarkPosition,omitempty" json:"watermarkPosition,omitempty"` // bottom-right, bottom-left, center
+
+	// Analytics
+	ViewCount          int64      `dynamodbav:"viewCount" json:"viewCount"`
+	TotalDownloads     int64      `dynamodbav:"totalDownloads" json:"totalDownloads"`
+	TotalFavorites     int64      `dynamodbav:"totalFavorites" json:"totalFavorites"`
+	UniqueClients      int64      `dynamodbav:"uniqueClients" json:"uniqueClients"`
+	LastClientAccessAt *time.Time `dynamodbav:"lastClientAccessAt,omitempty" json:"lastClientAccessAt,omitempty"`
 }
 
 // Photo represents a photo in a gallery
@@ -74,6 +90,11 @@ type ClientSession struct {
 	LastAccessAt  time.Time `dynamodbav:"lastAccessAt" json:"lastAccessAt"`
 	AccessCount   int       `dynamodbav:"accessCount" json:"accessCount"`
 	TTL           int64     `dynamodbav:"ttl" json:"-"` // Unix timestamp for DynamoDB TTL
+
+	// Device/browser analytics
+	DeviceType    string `dynamodbav:"deviceType,omitempty" json:"deviceType,omitempty"`       // mobile, tablet, desktop
+	BrowserFamily string `dynamodbav:"browserFamily,omitempty" json:"browserFamily,omitempty"` // chrome, safari, firefox
+	OSFamily      string `dynamodbav:"osFamily,omitempty" json:"osFamily,omitempty"`           // iOS, Android, Windows, macOS
 }
 
 // PhotographerRepository defines methods for photographer data operations
@@ -84,6 +105,15 @@ type PhotographerRepository interface {
 	Update(ctx context.Context, photographer *Photographer) error
 	Delete(ctx context.Context, userID string) error
 	UpdateStorageUsed(ctx context.Context, userID string, deltaBytes int64) error
+
+	// Analytics methods
+	IncrementTotalViews(ctx context.Context, userID string, delta int64) error
+	IncrementTotalDownloads(ctx context.Context, userID string, delta int64) error
+	IncrementTotalFavorites(ctx context.Context, userID string, delta int) error
+	IncrementTotalGalleries(ctx context.Context, userID string, delta int) error
+	IncrementTotalPhotos(ctx context.Context, userID string, delta int) error
+	IncrementTotalClients(ctx context.Context, userID string, delta int64) error
+	IncrementActiveGalleries(ctx context.Context, userID string, delta int) error
 }
 
 // GalleryRepository defines methods for gallery data operations
@@ -98,6 +128,13 @@ type GalleryRepository interface {
 	UpdatePhotoCount(ctx context.Context, galleryID string, delta int) error
 	UpdateTotalSize(ctx context.Context, galleryID string, deltaBytes int64) error
 	IncrementClientAccessCount(ctx context.Context, galleryID string) error
+
+	// Analytics methods
+	IncrementViewCount(ctx context.Context, galleryID string, delta int64) error
+	IncrementDownloadCount(ctx context.Context, galleryID string, delta int64) error
+	IncrementFavoriteCount(ctx context.Context, galleryID string, delta int) error
+	IncrementUniqueClients(ctx context.Context, galleryID string) error
+	UpdateLastClientAccess(ctx context.Context, galleryID string) error
 }
 
 // PhotoRepository defines methods for photo data operations
@@ -126,4 +163,11 @@ type ClientSessionRepository interface {
 	GetByID(ctx context.Context, galleryID, sessionID string) (*ClientSession, error)
 	Update(ctx context.Context, session *ClientSession) error
 	Delete(ctx context.Context, galleryID, sessionID string) error
+
+	// Analytics methods
+	ListByGallery(ctx context.Context, galleryID string, limit int) ([]*ClientSession, error)
+	CountByGallery(ctx context.Context, galleryID string) (int64, error)
+	ListByPhotographerGalleries(ctx context.Context, galleryIDs []string, limit int) ([]*ClientSession, error)
+	GetDeviceDistribution(ctx context.Context, galleryIDs []string) (map[string]int64, error)
+	GetBrowserDistribution(ctx context.Context, galleryIDs []string) (map[string]int64, error)
 }
