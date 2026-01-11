@@ -8,12 +8,16 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import { Construct } from 'constructs';
 import { DatabaseStack } from './database-stack';
+import { DomainStack } from './domain-stack';
 
 interface StorageStackProps extends cdk.StackProps {
   stage: string;
   databaseStack: DatabaseStack;
+  domainStack?: DomainStack; // Optional: for custom domain support
 }
 
 export class StorageStack extends cdk.Stack {
@@ -138,8 +142,37 @@ export class StorageStack extends cdk.Stack {
           }),
         },
       },
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // Use only North America and Europe for cost optimization
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      // Custom domain configuration (only if domain stack is provided)
+      ...(props.domainStack ? {
+        certificate: props.domainStack.wildcardCertificate,
+        domainNames: [
+          props.domainStack.baseDomain,
+          `*.${props.domainStack.baseDomain}`,
+        ],
+      } : {}),
     });
+
+    // Create Route53 records for custom domains if domain stack is provided
+    if (props.domainStack) {
+      // Apex domain record
+      new route53.ARecord(this, 'ApexDomainRecord', {
+        zone: props.domainStack.hostedZone,
+        recordName: props.domainStack.baseDomain,
+        target: route53.RecordTarget.fromAlias(
+          new route53Targets.CloudFrontTarget(this.distribution)
+        ),
+      });
+
+      // Wildcard subdomain record
+      new route53.ARecord(this, 'WildcardDomainRecord', {
+        zone: props.domainStack.hostedZone,
+        recordName: `*.${props.domainStack.baseDomain}`,
+        target: route53.RecordTarget.fromAlias(
+          new route53Targets.CloudFrontTarget(this.distribution)
+        ),
+      });
+    }
 
     // === Image Processing Resources ===
 

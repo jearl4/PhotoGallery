@@ -144,3 +144,152 @@ func (r *PhotographerRepository) Update(ctx context.Context, p *photographer.Pho
 
 	return nil
 }
+
+// GetBySubdomain retrieves a photographer by their subdomain
+func (r *PhotographerRepository) GetBySubdomain(ctx context.Context, subdomain string) (*photographer.Photographer, error) {
+	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("SubdomainIndex"),
+		KeyConditionExpression: aws.String("subdomain = :subdomain"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":subdomain": &types.AttributeValueMemberS{Value: subdomain},
+		},
+		Limit: aws.Int32(1),
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query photographer by subdomain: %w", err)
+	}
+
+	if len(result.Items) == 0 {
+		return nil, photographer.ErrNotFound
+	}
+
+	var p photographer.Photographer
+	err = attributevalue.UnmarshalMap(result.Items[0], &p)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal photographer: %w", err)
+	}
+
+	return &p, nil
+}
+
+// GetByCustomDomain retrieves a photographer by their custom domain
+func (r *PhotographerRepository) GetByCustomDomain(ctx context.Context, domain string) (*photographer.Photographer, error) {
+	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("CustomDomainIndex"),
+		KeyConditionExpression: aws.String("customDomain = :domain"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":domain": &types.AttributeValueMemberS{Value: domain},
+		},
+		Limit: aws.Int32(1),
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query photographer by custom domain: %w", err)
+	}
+
+	if len(result.Items) == 0 {
+		return nil, photographer.ErrNotFound
+	}
+
+	var p photographer.Photographer
+	err = attributevalue.UnmarshalMap(result.Items[0], &p)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal photographer: %w", err)
+	}
+
+	return &p, nil
+}
+
+// UpdateDomain updates the domain configuration for a photographer
+func (r *PhotographerRepository) UpdateDomain(ctx context.Context, userID string, subdomain, customDomain, domainStatus, verificationToken, certificateArn string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	updateExpr := "SET updatedAt = :updatedAt"
+	exprAttrValues := map[string]types.AttributeValue{
+		":updatedAt": &types.AttributeValueMemberS{Value: now},
+	}
+	exprAttrNames := map[string]string{}
+
+	// Handle subdomain (can be empty to remove)
+	if subdomain != "" {
+		updateExpr += ", subdomain = :subdomain"
+		exprAttrValues[":subdomain"] = &types.AttributeValueMemberS{Value: subdomain}
+	}
+
+	// Handle custom domain
+	if customDomain != "" {
+		updateExpr += ", customDomain = :customDomain"
+		exprAttrValues[":customDomain"] = &types.AttributeValueMemberS{Value: customDomain}
+	}
+
+	// Handle domain status
+	if domainStatus != "" {
+		updateExpr += ", domainStatus = :domainStatus"
+		exprAttrValues[":domainStatus"] = &types.AttributeValueMemberS{Value: domainStatus}
+	}
+
+	// Handle verification token
+	if verificationToken != "" {
+		updateExpr += ", verificationToken = :verificationToken"
+		exprAttrValues[":verificationToken"] = &types.AttributeValueMemberS{Value: verificationToken}
+	}
+
+	// Handle certificate ARN
+	if certificateArn != "" {
+		updateExpr += ", certificateArn = :certificateArn"
+		exprAttrValues[":certificateArn"] = &types.AttributeValueMemberS{Value: certificateArn}
+	}
+
+	// Set domainVerifiedAt if status is being set to verified or active
+	if domainStatus == "verified" || domainStatus == "active" {
+		updateExpr += ", domainVerifiedAt = :domainVerifiedAt"
+		exprAttrValues[":domainVerifiedAt"] = &types.AttributeValueMemberS{Value: now}
+	}
+
+	input := &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", userID)},
+			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
+		},
+		UpdateExpression:          aws.String(updateExpr),
+		ExpressionAttributeValues: exprAttrValues,
+	}
+
+	if len(exprAttrNames) > 0 {
+		input.ExpressionAttributeNames = exprAttrNames
+	}
+
+	_, err := r.client.UpdateItem(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to update photographer domain: %w", err)
+	}
+
+	return nil
+}
+
+// ClearDomain removes all domain configuration for a photographer
+func (r *PhotographerRepository) ClearDomain(ctx context.Context, userID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", userID)},
+			"SK": &types.AttributeValueMemberS{Value: "METADATA"},
+		},
+		UpdateExpression: aws.String("SET updatedAt = :updatedAt REMOVE subdomain, customDomain, domainStatus, verificationToken, certificateArn, domainVerifiedAt"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":updatedAt": &types.AttributeValueMemberS{Value: now},
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to clear photographer domain: %w", err)
+	}
+
+	return nil
+}

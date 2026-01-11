@@ -58,6 +58,9 @@ export class ApiStack extends cdk.Stack {
         COGNITO_CLIENT_ID: authStack.userPoolClient.userPoolClientId,
         SIGNED_URL_EXPIRATION: '24',
         JWT_SECRET: process.env.JWT_SECRET || 'dev-secret-change-in-production',
+        ALLOWED_ORIGINS: stage === 'prod'
+          ? 'https://your-production-domain.com'
+          : 'http://localhost:4200',
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
     });
@@ -97,7 +100,7 @@ export class ApiStack extends cdk.Stack {
       defaultCorsPreflightOptions: {
         allowOrigins: stage === 'prod'
           ? ['https://your-production-domain.com']
-          : apigateway.Cors.ALL_ORIGINS,
+          : ['http://localhost:4200'],
         allowMethods: apigateway.Cors.ALL_METHODS,
         allowHeaders: [
           'Content-Type',

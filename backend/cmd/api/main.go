@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"photographer-gallery/backend/internal/api/middleware"
 	appConfig "photographer-gallery/backend/internal/config"
 	"photographer-gallery/backend/internal/domain/auth"
+	"photographer-gallery/backend/internal/domain/customdomain"
 	"photographer-gallery/backend/internal/domain/gallery"
 	"photographer-gallery/backend/internal/domain/photo"
 	dynamodbRepo "photographer-gallery/backend/internal/repository/dynamodb"
@@ -65,7 +67,7 @@ func initializeApp() (*App, error) {
 	services := initServices(s3Client, repos, cfg)
 
 	// Build router with routes and middleware
-	router := buildRouter(services, cfg)
+	router := buildRouter(services, repos, cfg)
 
 	logger.Info("Application initialized", map[string]interface{}{
 		"stage":  cfg.APIStage,
@@ -100,6 +102,7 @@ type services struct {
 	photo   *photo.Service
 	session *auth.SessionService
 	auth    *cognitoAuth.Service
+	domain  *customdomain.Service
 }
 
 func initServices(s3Client *s3.Client, repos *repositories, cfg *appConfig.Config) *services {
@@ -117,24 +120,40 @@ func initServices(s3Client *s3.Client, repos *repositories, cfg *appConfig.Confi
 		logger.Warn("Using default JWT secret - set JWT_SECRET environment variable", nil)
 	}
 
+	// Get base domain from environment or use default
+	baseDomain := os.Getenv("BASE_DOMAIN")
+	if baseDomain == "" {
+		baseDomain = "photographergallery.com"
+	}
+
 	return &services{
 		gallery: gallery.NewService(repos.gallery, repos.photo, storageService),
 		photo:   photo.NewService(repos.photo, repos.gallery, repos.favorite, storageService),
 		session: auth.NewSessionService(repos.session, jwtSecret, cfg.SessionTTLHours),
 		auth:    cognitoAuth.NewService(cfg.CognitoUserPoolID, cfg.CognitoRegion),
+		domain:  customdomain.NewService(repos.photographer, baseDomain),
 	}
 }
 
-func buildRouter(svc *services, cfg *appConfig.Config) *api.Router {
+func buildRouter(svc *services, repos *repositories, cfg *appConfig.Config) *api.Router {
+	// Get base domain
+	baseDomain := os.Getenv("BASE_DOMAIN")
+	if baseDomain == "" {
+		baseDomain = "photographergallery.com"
+	}
+
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(nil) // Photographer repo not needed for GetMe
+	authHandler := handlers.NewAuthHandler(repos.photographer)
 	galleryHandler := handlers.NewGalleryHandler(svc.gallery)
 	photoHandler := handlers.NewPhotoHandler(svc.photo)
 	clientHandler := handlers.NewClientHandler(svc.gallery, svc.photo, svc.session)
+	domainHandler := handlers.NewDomainHandler(svc.domain)
+	portalHandler := handlers.NewPortalHandler(svc.domain, svc.gallery, repos.photographer)
 
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(svc.auth)
 	sessionMiddleware := middleware.NewSessionMiddleware(svc.session)
+	domainMiddleware := middleware.NewDomainMiddleware(svc.domain, baseDomain)
 
 	router := api.NewRouter()
 
@@ -159,6 +178,19 @@ func buildRouter(svc *services, cfg *appConfig.Config) *api.Router {
 	photographerRoutes.DELETE("/api/v1/galleries/{galleryId}/photos/{photoId}", wrapHandler(photoHandler.DeletePhoto))
 	photographerRoutes.GET("/api/v1/galleries/{id}/favorites", wrapHandler(photoHandler.GetFavorites))
 
+	// Domain management routes (authenticated)
+	photographerRoutes.GET("/api/v1/domain", wrapHandler(domainHandler.GetDomainConfig))
+	photographerRoutes.POST("/api/v1/domain/subdomain", wrapHandler(domainHandler.RequestSubdomain))
+	photographerRoutes.POST("/api/v1/domain/custom", wrapHandler(domainHandler.RequestCustomDomain))
+	photographerRoutes.POST("/api/v1/domain/verify", wrapHandler(domainHandler.VerifyDomain))
+	photographerRoutes.DELETE("/api/v1/domain", wrapHandler(domainHandler.RemoveDomain))
+
+	// Portal routes (accessed via custom domain, uses domain middleware)
+	portalRoutes := api.NewRouter()
+	portalRoutes.Use(domainMiddlewareWrapper(domainMiddleware))
+	portalRoutes.GET("/api/v1/portal/info", wrapHandler(portalHandler.GetPortalInfo))
+	portalRoutes.GET("/api/v1/portal/galleries", wrapHandler(portalHandler.ListPortalGalleries))
+
 	// Client routes
 	router.POST("/api/v1/client/verify", wrapHandler(clientHandler.VerifyPassword))
 
@@ -173,8 +205,12 @@ func buildRouter(svc *services, cfg *appConfig.Config) *api.Router {
 
 	// Mount sub-routers via notFound handler (middleware only applies to matched routes)
 	router.SetNotFound(func(req *api.Request) (*api.Response, error) {
-		// Try photographer routes for /api/v1/ paths (excluding /api/v1/client/)
-		if strings.HasPrefix(req.Path, "/api/v1/") && !strings.HasPrefix(req.Path, "/api/v1/client/") {
+		// Try portal routes for /api/v1/portal/ paths
+		if strings.HasPrefix(req.Path, "/api/v1/portal/") {
+			return portalRoutes.Route(req)
+		}
+		// Try photographer routes for /api/v1/ paths (excluding /api/v1/client/ and /api/v1/portal/)
+		if strings.HasPrefix(req.Path, "/api/v1/") && !strings.HasPrefix(req.Path, "/api/v1/client/") && !strings.HasPrefix(req.Path, "/api/v1/portal/") {
 			return photographerRoutes.Route(req)
 		}
 		// Try client routes for /api/v1/client/ paths
@@ -233,9 +269,20 @@ func wrapHandler(fn http.HandlerFunc) api.Handler {
 				headers[k] = vals[0]
 			}
 		}
+
+		// Parse the JSON body back into an interface{} to avoid double-encoding
+		// when HandleLambda calls json.Marshal on the response body
+		var body interface{}
+		if rw.body != "" {
+			if err := json.Unmarshal([]byte(rw.body), &body); err != nil {
+				// If parsing fails, use the raw string
+				body = rw.body
+			}
+		}
+
 		return &api.Response{
 			StatusCode: rw.statusCode,
-			Body:       rw.body,
+			Body:       body,
 			Headers:    headers,
 		}, nil
 	}
@@ -265,6 +312,22 @@ func sessionMiddlewareWrapper(m *middleware.SessionMiddleware) api.Middleware {
 			})
 			if err != nil {
 				return api.Unauthorized(err.Error()), nil
+			}
+			req.Context = ctx
+			return next(req)
+		}
+	}
+}
+
+func domainMiddlewareWrapper(m *middleware.DomainMiddleware) api.Middleware {
+	return func(next api.Handler) api.Handler {
+		return func(req *api.Request) (*api.Response, error) {
+			ctx, err := m.ResolvePhotographer(req.Context, events.APIGatewayProxyRequest{
+				Headers: req.Headers,
+			})
+			if err != nil {
+				// Domain resolution errors are not fatal - continue without photographer context
+				logger.Warn("Domain resolution failed", map[string]interface{}{"error": err.Error()})
 			}
 			req.Context = ctx
 			return next(req)

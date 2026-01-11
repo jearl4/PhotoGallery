@@ -2,6 +2,7 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { DatabaseStack } from '../lib/stacks/database-stack';
+import { DomainStack } from '../lib/stacks/domain-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { AuthStack } from '../lib/stacks/auth-stack';
 import { ApiStack } from '../lib/stacks/api-stack';
@@ -16,17 +17,34 @@ const env = {
 
 const stage = app.node.tryGetContext('stage') || 'dev';
 
+// Get base domain from context (required for custom domain support)
+// Usage: cdk deploy -c baseDomain=photographergallery.com
+const baseDomain = app.node.tryGetContext('baseDomain');
+const hostedZoneId = app.node.tryGetContext('hostedZoneId');
+
 // Database Stack
 const databaseStack = new DatabaseStack(app, `PhotographerGalleryDatabase-${stage}`, {
   env,
   stage,
 });
 
+// Domain Stack (optional - only created if baseDomain is provided)
+let domainStack: DomainStack | undefined;
+if (baseDomain) {
+  domainStack = new DomainStack(app, `PhotographerGalleryDomain-${stage}`, {
+    env,
+    stage,
+    baseDomain,
+    hostedZoneId,
+  });
+}
+
 // Storage Stack (includes image processing)
 const storageStack = new StorageStack(app, `PhotographerGalleryStorage-${stage}`, {
   env,
   stage,
   databaseStack,
+  domainStack, // Pass domain stack for CloudFront custom domain config
 });
 
 // Auth Stack

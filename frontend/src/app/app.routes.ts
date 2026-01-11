@@ -1,8 +1,9 @@
 import { Routes } from '@angular/router';
 import { authGuard, noAuthGuard } from './core/guards/auth.guard';
+import { portalOnlyGuard } from './core/guards/domain.guard';
 
 export const routes: Routes = [
-  // Home / Login
+  // Home / Login (main domain only)
   {
     path: '',
     loadComponent: () => import('./features/auth/login/login.component').then(m => m.LoginComponent),
@@ -15,7 +16,30 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/callback/callback.component').then(m => m.CallbackComponent)
   },
 
-  // Photographer Routes (Protected)
+  // Portal Routes (custom domain only) - photographer's public-facing gallery list
+  {
+    path: 'portal',
+    canActivate: [portalOnlyGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./features/portal/photographer-home/photographer-home.component')
+          .then(m => m.PhotographerHomeComponent)
+      },
+      {
+        path: ':customUrl',
+        loadComponent: () => import('./features/client/gallery-access/gallery-access.component')
+          .then(m => m.GalleryAccessComponent)
+      },
+      {
+        path: ':customUrl/view',
+        loadComponent: () => import('./features/client/gallery-view/gallery-view.component')
+          .then(m => m.GalleryViewComponent)
+      }
+    ]
+  },
+
+  // Photographer Routes (Protected - for gallery management)
   {
     path: 'photographer',
     canActivate: [authGuard],
@@ -41,6 +65,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/photographer/photo-upload/photo-upload.component').then(m => m.PhotoUploadComponent)
       },
       {
+        path: 'settings',
+        loadComponent: () => import('./features/photographer/settings/settings.component').then(m => m.SettingsComponent)
+      },
+      {
         path: '',
         redirectTo: 'dashboard',
         pathMatch: 'full'
@@ -48,7 +76,7 @@ export const routes: Routes = [
     ]
   },
 
-  // Client Routes (Public)
+  // Client Routes (Public - for accessing galleries)
   {
     path: 'client/access',
     loadComponent: () => import('./features/client/gallery-code/gallery-code.component').then(m => m.GalleryCodeComponent)

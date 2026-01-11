@@ -33,6 +33,20 @@ export class DatabaseStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // GSI for subdomain lookup (custom domain support)
+    this.photographersTable.addGlobalSecondaryIndex({
+      indexName: 'SubdomainIndex',
+      partitionKey: { name: 'subdomain', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GSI for custom domain lookup
+    this.photographersTable.addGlobalSecondaryIndex({
+      indexName: 'CustomDomainIndex',
+      partitionKey: { name: 'customDomain', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
     // Galleries Table
     this.galleriesTable = new dynamodb.Table(this, 'GalleriesTable', {
       tableName: `photographer-gallery-galleries-${props.stage}`,
