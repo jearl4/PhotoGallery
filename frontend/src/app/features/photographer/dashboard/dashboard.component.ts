@@ -29,11 +29,12 @@ export class DashboardComponent implements OnInit {
     this.isLoading.set(true);
     this.apiService.getGalleries().subscribe({
       next: (response) => {
-        this.galleries.set(response.galleries);
+        this.galleries.set(response.galleries ?? []);
         this.isLoading.set(false);
       },
       error: (err) => {
         console.error('Failed to load galleries:', err);
+        this.galleries.set([]);
         this.isLoading.set(false);
       }
     });

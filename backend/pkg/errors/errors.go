@@ -66,3 +66,8 @@ func NewUnauthorized(message string) *AppError {
 func NewInternalServer(message string) *AppError {
 	return New(http.StatusInternalServerError, message)
 }
+
+// NewConflict creates a conflict error (409)
+func NewConflict(message string) *AppError {
+	return New(http.StatusConflict, message)
+}

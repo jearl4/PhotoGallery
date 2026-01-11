@@ -30,15 +30,25 @@ export class SchedulerStack extends cdk.Stack {
     });
 
     // Create scheduler Lambda function
+    // Build Go code during CDK deployment (same pattern as API Lambda)
     this.schedulerFunction = new lambda.Function(this, 'SchedulerFunction', {
       functionName: `photographer-gallery-scheduler-${stage}`,
-      runtime: lambda.Runtime.PROVIDED_AL2023,
+      runtime: lambda.Runtime.PROVIDED_AL2,
       architecture: lambda.Architecture.ARM_64,
       handler: 'bootstrap',
-      code: lambda.Code.fromAsset('../backend/bin', {
+      code: lambda.Code.fromAsset('../backend', {
         bundling: {
-          image: lambda.Runtime.PROVIDED_AL2023.bundlingImage,
-          command: ['bash', '-c', 'cp bootstrap-scheduler /asset-output/bootstrap'],
+          image: lambda.Runtime.PROVIDED_AL2.bundlingImage,
+          command: [
+            'bash', '-c', [
+              'yum install -y golang',
+              'export GOPATH=/tmp/go',
+              'export GOCACHE=/tmp/go-cache',
+              'cd /asset-input',
+              'GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o /asset-output/bootstrap cmd/scheduler/main.go',
+            ].join(' && '),
+          ],
+          user: 'root',
         },
       }),
       timeout: cdk.Duration.minutes(5),

@@ -13,84 +13,133 @@ import (
 	"photographer-gallery/backend/internal/repository"
 )
 
-// GalleryRepository implements repository.GalleryRepository using DynamoDB.
 type GalleryRepository struct {
 	client    *dynamodb.Client
 	tableName string
 }
 
-// NewGalleryRepository creates a new DynamoDB-backed gallery repository.
 func NewGalleryRepository(client *dynamodb.Client, tableName string) *GalleryRepository {
-	return &GalleryRepository{client: client, tableName: tableName}
+	return &GalleryRepository{
+		client:    client,
+		tableName: tableName,
+	}
 }
 
 type galleryItem struct {
-	PK, SK                                    string  `dynamodbav:"PK,SK"`
-	GalleryID, PhotographerID                 string  `dynamodbav:"galleryId,photographerId"`
-	Name, Description, CustomURL, Password    string  `dynamodbav:"name,description,customUrl,password"`
-	CreatedAt, Status                         string  `dynamodbav:"createdAt,status"`
-	ExpiresAt                                 *string `dynamodbav:"expiresAt,omitempty"`
-	PhotoCount, ClientAccessCount             int     `dynamodbav:"photoCount,clientAccessCount"`
-	TotalSize                                 int64   `dynamodbav:"totalSize"`
-	EnableWatermark                           bool    `dynamodbav:"enableWatermark"`
-	WatermarkText, WatermarkPosition          string  `dynamodbav:"watermarkText,watermarkPosition,omitempty"`
+	PK                string     `dynamodbav:"PK"`
+	SK                string     `dynamodbav:"SK"`
+	GalleryID         string     `dynamodbav:"galleryId"`
+	PhotographerID    string     `dynamodbav:"photographerId"`
+	Name              string     `dynamodbav:"name"`
+	Description       string     `dynamodbav:"description"`
+	CustomURL         string     `dynamodbav:"customUrl"`
+	Password          string     `dynamodbav:"password"`
+	CreatedAt         string     `dynamodbav:"createdAt"`
+	ExpiresAt         *string    `dynamodbav:"expiresAt,omitempty"`
+	Status            string     `dynamodbav:"status"`
+	PhotoCount        int        `dynamodbav:"photoCount"`
+	TotalSize         int64      `dynamodbav:"totalSize"`
+	ClientAccessCount int        `dynamodbav:"clientAccessCount"`
+	EnableWatermark   bool       `dynamodbav:"enableWatermark"`
+	WatermarkText     string     `dynamodbav:"watermarkText,omitempty"`
+	WatermarkPosition string     `dynamodbav:"watermarkPosition,omitempty"`
 }
 
 func (r *GalleryRepository) Create(ctx context.Context, gallery *repository.Gallery) error {
-	return r.save(ctx, gallery)
-}
+	item := galleryItem{
+		PK:                fmt.Sprintf("PHOTOGRAPHER#%s", gallery.PhotographerID),
+		SK:                fmt.Sprintf("GALLERY#%s", gallery.GalleryID),
+		GalleryID:         gallery.GalleryID,
+		PhotographerID:    gallery.PhotographerID,
+		Name:              gallery.Name,
+		Description:       gallery.Description,
+		CustomURL:         gallery.CustomURL,
+		Password:          gallery.Password,
+		CreatedAt:         gallery.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Status:            gallery.Status,
+		PhotoCount:        gallery.PhotoCount,
+		TotalSize:         gallery.TotalSize,
+		ClientAccessCount: gallery.ClientAccessCount,
+		EnableWatermark:   gallery.EnableWatermark,
+		WatermarkText:     gallery.WatermarkText,
+		WatermarkPosition: gallery.WatermarkPosition,
+	}
 
-func (r *GalleryRepository) Update(ctx context.Context, gallery *repository.Gallery) error {
-	return r.save(ctx, gallery)
-}
+	if gallery.ExpiresAt != nil {
+		expiresAtStr := gallery.ExpiresAt.Format("2006-01-02T15:04:05Z07:00")
+		item.ExpiresAt = &expiresAtStr
+	}
 
-func (r *GalleryRepository) save(ctx context.Context, gallery *repository.Gallery) error {
-	item := r.toItem(gallery)
 	av, err := attributevalue.MarshalMap(item)
 	if err != nil {
 		return fmt.Errorf("failed to marshal gallery: %w", err)
 	}
+
 	_, err = r.client.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(r.tableName),
 		Item:      av,
 	})
+
 	return err
 }
 
 func (r *GalleryRepository) GetByID(ctx context.Context, galleryID string) (*repository.Gallery, error) {
-	return r.queryOne(ctx, "GalleryIdIndex", "galleryId = :v", map[string]types.AttributeValue{
-		":v": &types.AttributeValueMemberS{Value: galleryID},
-	})
-}
-
-func (r *GalleryRepository) GetByCustomURL(ctx context.Context, customURL string) (*repository.Gallery, error) {
-	return r.queryOne(ctx, "CustomUrlIndex", "customUrl = :v", map[string]types.AttributeValue{
-		":v": &types.AttributeValueMemberS{Value: customURL},
-	})
-}
-
-func (r *GalleryRepository) queryOne(ctx context.Context, index, keyExpr string, values map[string]types.AttributeValue) (*repository.Gallery, error) {
+	// Query using GSI1 (GalleryIdIndex)
 	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:                 aws.String(r.tableName),
-		IndexName:                 aws.String(index),
-		KeyConditionExpression:    aws.String(keyExpr),
-		ExpressionAttributeValues: values,
-		Limit:                     aws.Int32(1),
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("GalleryIdIndex"),
+		KeyConditionExpression: aws.String("galleryId = :galleryId"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":galleryId": &types.AttributeValueMemberS{Value: galleryID},
+		},
+		Limit: aws.Int32(1),
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to query gallery: %w", err)
 	}
+
 	if len(result.Items) == 0 {
 		return nil, nil
 	}
+
 	var item galleryItem
 	if err := attributevalue.UnmarshalMap(result.Items[0], &item); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal gallery: %w", err)
 	}
-	return r.fromItem(&item), nil
+
+	return itemToGallery(&item), nil
 }
 
-func (r *GalleryRepository) ListByPhotographer(ctx context.Context, photographerID string, limit int, lastKey map[string]interface{}) ([]*repository.Gallery, map[string]interface{}, error) {
+func (r *GalleryRepository) GetByCustomURL(ctx context.Context, customURL string) (*repository.Gallery, error) {
+	// Query using GSI2 (CustomUrlIndex)
+	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("CustomUrlIndex"),
+		KeyConditionExpression: aws.String("customUrl = :customUrl"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":customUrl": &types.AttributeValueMemberS{Value: customURL},
+		},
+		Limit: aws.Int32(1),
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query gallery by custom URL: %w", err)
+	}
+
+	if len(result.Items) == 0 {
+		return nil, nil
+	}
+
+	var item galleryItem
+	if err := attributevalue.UnmarshalMap(result.Items[0], &item); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal gallery: %w", err)
+	}
+
+	return itemToGallery(&item), nil
+}
+
+func (r *GalleryRepository) ListByPhotographer(ctx context.Context, photographerID string, limit int, lastEvaluatedKey map[string]interface{}) ([]*repository.Gallery, map[string]interface{}, error) {
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),
 		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :sk)"),
@@ -99,12 +148,15 @@ func (r *GalleryRepository) ListByPhotographer(ctx context.Context, photographer
 			":sk": &types.AttributeValueMemberS{Value: "GALLERY#"},
 		},
 		Limit:            aws.Int32(int32(limit)),
-		ScanIndexForward: aws.Bool(false),
+		ScanIndexForward: aws.Bool(false), // Most recent first
 	}
-	if lastKey != nil {
-		if startKey, err := attributevalue.MarshalMap(lastKey); err == nil {
-			input.ExclusiveStartKey = startKey
+
+	if lastEvaluatedKey != nil {
+		exclusiveStartKey, err := attributevalue.MarshalMap(lastEvaluatedKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal last evaluated key: %w", err)
 		}
+		input.ExclusiveStartKey = exclusiveStartKey
 	}
 
 	result, err := r.client.Query(ctx, input)
@@ -114,34 +166,86 @@ func (r *GalleryRepository) ListByPhotographer(ctx context.Context, photographer
 
 	galleries := make([]*repository.Gallery, 0, len(result.Items))
 	for _, item := range result.Items {
-		var gi galleryItem
-		if err := attributevalue.UnmarshalMap(item, &gi); err != nil {
+		var galleryItem galleryItem
+		if err := attributevalue.UnmarshalMap(item, &galleryItem); err != nil {
 			return nil, nil, fmt.Errorf("failed to unmarshal gallery: %w", err)
 		}
-		galleries = append(galleries, r.fromItem(&gi))
+		galleries = append(galleries, itemToGallery(&galleryItem))
 	}
 
 	var nextKey map[string]interface{}
 	if result.LastEvaluatedKey != nil {
-		attributevalue.UnmarshalMap(result.LastEvaluatedKey, &nextKey)
+		if err := attributevalue.UnmarshalMap(result.LastEvaluatedKey, &nextKey); err != nil {
+			return nil, nil, fmt.Errorf("failed to unmarshal last evaluated key: %w", err)
+		}
 	}
+
 	return galleries, nextKey, nil
 }
 
+func (r *GalleryRepository) Update(ctx context.Context, gallery *repository.Gallery) error {
+	item := galleryItem{
+		PK:                fmt.Sprintf("PHOTOGRAPHER#%s", gallery.PhotographerID),
+		SK:                fmt.Sprintf("GALLERY#%s", gallery.GalleryID),
+		GalleryID:         gallery.GalleryID,
+		PhotographerID:    gallery.PhotographerID,
+		Name:              gallery.Name,
+		Description:       gallery.Description,
+		CustomURL:         gallery.CustomURL,
+		Password:          gallery.Password,
+		CreatedAt:         gallery.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Status:            gallery.Status,
+		PhotoCount:        gallery.PhotoCount,
+		TotalSize:         gallery.TotalSize,
+		ClientAccessCount: gallery.ClientAccessCount,
+		EnableWatermark:   gallery.EnableWatermark,
+		WatermarkText:     gallery.WatermarkText,
+		WatermarkPosition: gallery.WatermarkPosition,
+	}
+
+	if gallery.ExpiresAt != nil {
+		expiresAtStr := gallery.ExpiresAt.Format("2006-01-02T15:04:05Z07:00")
+		item.ExpiresAt = &expiresAtStr
+	}
+
+	av, err := attributevalue.MarshalMap(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal gallery: %w", err)
+	}
+
+	_, err = r.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(r.tableName),
+		Item:      av,
+	})
+
+	return err
+}
+
 func (r *GalleryRepository) Delete(ctx context.Context, galleryID string) error {
+	// First get the gallery to get the photographer ID
 	gallery, err := r.GetByID(ctx, galleryID)
-	if err != nil || gallery == nil {
+	if err != nil {
 		return err
 	}
+	if gallery == nil {
+		return nil
+	}
+
 	_, err = r.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 		TableName: aws.String(r.tableName),
-		Key:       r.key(gallery.PhotographerID, galleryID),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PHOTOGRAPHER#%s", gallery.PhotographerID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("GALLERY#%s", galleryID)},
+		},
 	})
+
 	return err
 }
 
 func (r *GalleryRepository) ListExpired(ctx context.Context, limit int) ([]*repository.Gallery, error) {
-	now := time.Now().Format(time.RFC3339)
+	// Query using GSI3 (StatusExpirationIndex) for active galleries with expiresAt < now
+	now := time.Now().Format("2006-01-02T15:04:05Z07:00")
+
 	result, err := r.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),
 		IndexName:              aws.String("StatusExpirationIndex"),
@@ -155,40 +259,24 @@ func (r *GalleryRepository) ListExpired(ctx context.Context, limit int) ([]*repo
 		},
 		Limit: aws.Int32(int32(limit)),
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to list expired galleries: %w", err)
 	}
 
 	galleries := make([]*repository.Gallery, 0, len(result.Items))
 	for _, item := range result.Items {
-		var gi galleryItem
-		if err := attributevalue.UnmarshalMap(item, &gi); err != nil {
+		var galleryItem galleryItem
+		if err := attributevalue.UnmarshalMap(item, &galleryItem); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal gallery: %w", err)
 		}
-		galleries = append(galleries, r.fromItem(&gi))
+		galleries = append(galleries, itemToGallery(&galleryItem))
 	}
+
 	return galleries, nil
 }
 
 func (r *GalleryRepository) UpdatePhotoCount(ctx context.Context, galleryID string, delta int) error {
-	return r.atomicUpdate(ctx, galleryID, "SET photoCount = photoCount + :v", map[string]types.AttributeValue{
-		":v": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", delta)},
-	})
-}
-
-func (r *GalleryRepository) UpdateTotalSize(ctx context.Context, galleryID string, deltaBytes int64) error {
-	return r.atomicUpdate(ctx, galleryID, "SET totalSize = totalSize + :v", map[string]types.AttributeValue{
-		":v": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", deltaBytes)},
-	})
-}
-
-func (r *GalleryRepository) IncrementClientAccessCount(ctx context.Context, galleryID string) error {
-	return r.atomicUpdate(ctx, galleryID, "SET clientAccessCount = clientAccessCount + :v", map[string]types.AttributeValue{
-		":v": &types.AttributeValueMemberN{Value: "1"},
-	})
-}
-
-func (r *GalleryRepository) atomicUpdate(ctx context.Context, galleryID, updateExpr string, values map[string]types.AttributeValue) error {
 	gallery, err := r.GetByID(ctx, galleryID)
 	if err != nil {
 		return err
@@ -196,50 +284,72 @@ func (r *GalleryRepository) atomicUpdate(ctx context.Context, galleryID, updateE
 	if gallery == nil {
 		return fmt.Errorf("gallery not found")
 	}
+
 	_, err = r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName:                 aws.String(r.tableName),
-		Key:                       r.key(gallery.PhotographerID, galleryID),
-		UpdateExpression:          aws.String(updateExpr),
-		ExpressionAttributeValues: values,
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PHOTOGRAPHER#%s", gallery.PhotographerID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("GALLERY#%s", galleryID)},
+		},
+		UpdateExpression: aws.String("SET photoCount = photoCount + :delta"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":delta": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", delta)},
+		},
 	})
+
 	return err
 }
 
-func (r *GalleryRepository) key(photographerID, galleryID string) map[string]types.AttributeValue {
-	return map[string]types.AttributeValue{
-		"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PHOTOGRAPHER#%s", photographerID)},
-		"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("GALLERY#%s", galleryID)},
+func (r *GalleryRepository) UpdateTotalSize(ctx context.Context, galleryID string, deltaBytes int64) error {
+	gallery, err := r.GetByID(ctx, galleryID)
+	if err != nil {
+		return err
 	}
+	if gallery == nil {
+		return fmt.Errorf("gallery not found")
+	}
+
+	_, err = r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PHOTOGRAPHER#%s", gallery.PhotographerID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("GALLERY#%s", galleryID)},
+		},
+		UpdateExpression: aws.String("SET totalSize = totalSize + :delta"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":delta": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", deltaBytes)},
+		},
+	})
+
+	return err
 }
 
-func (r *GalleryRepository) toItem(g *repository.Gallery) *galleryItem {
-	item := &galleryItem{
-		PK:                fmt.Sprintf("PHOTOGRAPHER#%s", g.PhotographerID),
-		SK:                fmt.Sprintf("GALLERY#%s", g.GalleryID),
-		GalleryID:         g.GalleryID,
-		PhotographerID:    g.PhotographerID,
-		Name:              g.Name,
-		Description:       g.Description,
-		CustomURL:         g.CustomURL,
-		Password:          g.Password,
-		CreatedAt:         g.CreatedAt.Format(time.RFC3339),
-		Status:            g.Status,
-		PhotoCount:        g.PhotoCount,
-		TotalSize:         g.TotalSize,
-		ClientAccessCount: g.ClientAccessCount,
-		EnableWatermark:   g.EnableWatermark,
-		WatermarkText:     g.WatermarkText,
-		WatermarkPosition: g.WatermarkPosition,
+func (r *GalleryRepository) IncrementClientAccessCount(ctx context.Context, galleryID string) error {
+	gallery, err := r.GetByID(ctx, galleryID)
+	if err != nil {
+		return err
 	}
-	if g.ExpiresAt != nil {
-		s := g.ExpiresAt.Format(time.RFC3339)
-		item.ExpiresAt = &s
+	if gallery == nil {
+		return fmt.Errorf("gallery not found")
 	}
-	return item
+
+	_, err = r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PHOTOGRAPHER#%s", gallery.PhotographerID)},
+			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("GALLERY#%s", galleryID)},
+		},
+		UpdateExpression: aws.String("SET clientAccessCount = clientAccessCount + :one"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":one": &types.AttributeValueMemberN{Value: "1"},
+		},
+	})
+
+	return err
 }
 
-func (r *GalleryRepository) fromItem(item *galleryItem) *repository.Gallery {
-	g := &repository.Gallery{
+func itemToGallery(item *galleryItem) *repository.Gallery {
+	gallery := &repository.Gallery{
 		GalleryID:         item.GalleryID,
 		PhotographerID:    item.PhotographerID,
 		Name:              item.Name,
@@ -254,13 +364,30 @@ func (r *GalleryRepository) fromItem(item *galleryItem) *repository.Gallery {
 		WatermarkText:     item.WatermarkText,
 		WatermarkPosition: item.WatermarkPosition,
 	}
-	if t, err := time.Parse(time.RFC3339, item.CreatedAt); err == nil {
-		g.CreatedAt = t
-	}
-	if item.ExpiresAt != nil {
-		if t, err := time.Parse(time.RFC3339, *item.ExpiresAt); err == nil {
-			g.ExpiresAt = &t
+
+	// Parse CreatedAt
+	if item.CreatedAt != "" {
+		if t, err := parseTime(item.CreatedAt); err == nil {
+			gallery.CreatedAt = t
 		}
 	}
-	return g
+
+	// Parse ExpiresAt
+	if item.ExpiresAt != nil && *item.ExpiresAt != "" {
+		if t, err := parseTime(*item.ExpiresAt); err == nil {
+			gallery.ExpiresAt = &t
+		}
+	}
+
+	return gallery
+}
+
+func parseTime(timeStr string) (time.Time, error) {
+	// Try ISO 8601 format first
+	t, err := time.Parse("2006-01-02T15:04:05Z07:00", timeStr)
+	if err == nil {
+		return t, nil
+	}
+	// Fallback to RFC3339
+	return time.Parse(time.RFC3339, timeStr)
 }

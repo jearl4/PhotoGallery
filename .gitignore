@@ -47,6 +47,8 @@ infrastructure/node_modules/
 infrastructure/cdk.out/
 infrastructure/bin/
 infrastructure/.env
+infrastructure/lib/**/*.js
+infrastructure/lib/**/*.d.ts
 
 # IDE
 .vscode/

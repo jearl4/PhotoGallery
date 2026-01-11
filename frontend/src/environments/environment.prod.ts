@@ -6,4 +6,5 @@ export const environment = {
   cognitoClientId: '4k3ie52do1r6h3a44psong3kdh',
   cognitoRegion: 'us-east-1',
   cognitoDomain: 'photographer-gallery-dev-01832951',
+  baseDomain: 'photographergallery.com', // Base domain for subdomain detection
 };

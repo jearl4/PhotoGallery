@@ -15,4 +15,12 @@ type Photographer struct {
 	Plan        string `json:"plan" dynamodbav:"plan"` // free, pro
 	CreatedAt   string `json:"createdAt" dynamodbav:"createdAt"`
 	UpdatedAt   string `json:"updatedAt" dynamodbav:"updatedAt"`
+
+	// Custom domain configuration
+	Subdomain         string `json:"subdomain,omitempty" dynamodbav:"subdomain,omitempty"`
+	CustomDomain      string `json:"customDomain,omitempty" dynamodbav:"customDomain,omitempty"`
+	DomainStatus      string `json:"domainStatus,omitempty" dynamodbav:"domainStatus,omitempty"` // pending_verification, verified, pending_ssl, active
+	VerificationToken string `json:"-" dynamodbav:"verificationToken,omitempty"`
+	CertificateArn    string `json:"-" dynamodbav:"certificateArn,omitempty"`
+	DomainVerifiedAt  string `json:"domainVerifiedAt,omitempty" dynamodbav:"domainVerifiedAt,omitempty"`
 }
